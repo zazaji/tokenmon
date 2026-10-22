@@ -95,7 +95,7 @@ def create_app(db_path: str | None = None) -> Flask:
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
                                 tz_name=f["tz"], span=f["span"],
-                                anchor=f["anchor"])
+                                anchor=f["anchor"], models=f["models"])
             record_count = store.count()
             last_run = store.last_runs(1)
         return jsonify({
@@ -119,7 +119,7 @@ def create_app(db_path: str | None = None) -> Flask:
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
                                 tz_name=f["tz"], span=f["span"],
-                                anchor=f["anchor"])
+                                anchor=f["anchor"], models=f["models"])
         return jsonify({
             "period": f["period"],
             "timezone": data["timezone"],
@@ -132,7 +132,7 @@ def create_app(db_path: str | None = None) -> Flask:
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
                                 tz_name=f["tz"], span=f["span"],
-                                anchor=f["anchor"])
+                                anchor=f["anchor"], models=f["models"])
             if f["models"]:
                 filtered = [r for r in store.iter_records(tools=f["tools"],
                                                           models=f["models"])]
@@ -262,7 +262,7 @@ def create_app(db_path: str | None = None) -> Flask:
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
                                 tz_name=f["tz"], span=f["span"],
-                                anchor=f["anchor"])
+                                anchor=f["anchor"], models=f["models"])
             rows = list(store.iter_records(tools=f["tools"], models=f["models"]))
         buffer = io.StringIO()
         writer = csv.writer(buffer)

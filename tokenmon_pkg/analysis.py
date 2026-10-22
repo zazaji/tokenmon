@@ -340,8 +340,8 @@ def build_account_report(store, tz_name=None, since=None, until=None,
 
 
 def build_report(store, period: str = "day", tools: Sequence[str] | None = None,
-                 tz_name: str | None = None, span: int = 1,
-                 anchor=None) -> dict:
+                 tz_name: str | None = None, span: int = 1, anchor=None,
+                 models: Sequence[str] | None = None) -> dict:
     """Build the full analytics payload for the web UI and the CLI.
 
     The report contains a bucket series plus breakdowns by tool, model,
@@ -351,6 +351,9 @@ def build_report(store, period: str = "day", tools: Sequence[str] | None = None,
     anchor selects which period the window ends on (default now).  Passing an
     earlier date moves the whole window back so the UI can offer previous /
     next period navigation; span is how many periods the window covers.
+
+    ``models`` restricts every dimension of the report to the named models, so
+    the KPI cards, the curve and all breakdown tables agree on one filter.
     """
     if period not in PERIODS:
         period = "day"
@@ -358,7 +361,8 @@ def build_report(store, period: str = "day", tools: Sequence[str] | None = None,
     anchor_dt = to_utc(anchor) if anchor is not None else None
     start, end = resolve_range(period, anchor=anchor_dt, tz=tz, span=span)
 
-    records = list(store.iter_records(tools=tools, since=start, until=end))
+    records = list(store.iter_records(tools=tools, models=models,
+                                     since=start, until=end))
     for record in records:
         record.ts = record.ts.astimezone(tz)
 

@@ -35,28 +35,8 @@ var state = {
   knownModels: [],
   last: null,
   series: [],
-  metric: "total_tokens"
+  metric: "token_split"
 };
-
-// Metrics offered by the line chart toolbar.
-var METRICS = [
-  { key: "total_tokens", label: "总 Token", color: "#5b8cff" },
-  { key: "input_tokens", label: "输入", color: "#5b8cff" },
-  { key: "output_tokens", label: "输出", color: "#f0a742" },
-  { key: "reasoning_tokens", label: "推理", color: "#a06bff" },
-  { key: "cache_read_tokens", label: "缓存命中", color: "#37c2a8" },
-  { key: "cache_write_tokens", label: "缓存写入", color: "#e879b9" },
-  { key: "interactions", label: "交互次数", color: "#8bd45a" },
-  { key: "llm_calls", label: "LLM 调用", color: "#4d9fff" },
-  { key: "tool_calls", label: "工具调用", color: "#ef5f6b" }
-];
-
-function metricDef(key) {
-  for (var i = 0; i < METRICS.length; i++) {
-    if (METRICS[i].key === key) return METRICS[i];
-  }
-  return METRICS[0];
-}
 
 var TOOL_COLORS = {
   codex: "#5b8cff",
@@ -226,6 +206,37 @@ function buildChips(container, values, selected, onChange, single) {
   });
 }
 
+// Model filter is a dropdown: one model at a time keeps the query simple and
+// the list short even with dozens of models across five tools.
+function buildModelSelect(models) {
+  state.knownModels = models || [];
+  var sel = qs("#modelSelect");
+  if (!sel) return;
+  sel.innerHTML = "";
+  var all = document.createElement("option");
+  all.value = "";
+  all.textContent = "全部模型 (" + state.knownModels.length + ")";
+  sel.appendChild(all);
+  state.knownModels.forEach(function (name) {
+    var opt = document.createElement("option");
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  // Reflect the URL selection, if any.
+  state.models = state.models.filter(function (m) {
+    return state.knownModels.indexOf(m) >= 0;
+  }).slice(0, 1);
+  sel.value = state.models[0] || "";
+  if (sel.dataset.bound !== "1") {
+    sel.dataset.bound = "1";
+    sel.addEventListener("change", function (e) {
+      state.models = e.target.value ? [e.target.value] : [];
+      load();
+    });
+  }
+}
+
 function buildTimezoneOptions() {
   var zones = ["", "UTC", "Asia/Shanghai", "Asia/Singapore", "Asia/Tokyo",
                "Europe/London", "Europe/Berlin", "America/New_York",
@@ -241,12 +252,67 @@ function buildTimezoneOptions() {
 
 // ------------------------------------------------------------- line chart
 
-// ------------------------------------------------------------- line chart
+// Series definitions.  The default "token split" view draws one line per
+// token component (input / output / cache) so the composition of the usage
+// is visible at a glance; the other metrics are single line views.
+var SERIES_GROUPS = [
+  {
+    key: "token_split",
+    label: "Token 构成",
+    lines: [
+      { key: "input_tokens", label: "输入", color: "#5b8cff" },
+      { key: "cache_read_tokens", label: "缓存命中", color: "#37c2a8" },
+      { key: "output_tokens", label: "输出", color: "#f0a742" },
+      { key: "reasoning_tokens", label: "推理", color: "#a06bff" }
+    ]
+  },
+  {
+    key: "total_tokens",
+    label: "总 Token",
+    lines: [
+      { key: "total_tokens", label: "总 Token", color: "#5b8cff" }
+    ]
+  },
+  {
+    key: "cache_read_tokens",
+    label: "缓存命中",
+    lines: [
+      { key: "cache_read_tokens", label: "缓存命中", color: "#37c2a8" }
+    ]
+  },
+  {
+    key: "interactions",
+    label: "交互次数",
+    lines: [
+      { key: "interactions", label: "交互次数", color: "#8bd45a" }
+    ]
+  },
+  {
+    key: "llm_calls",
+    label: "LLM 调用",
+    lines: [
+      { key: "llm_calls", label: "LLM 调用", color: "#4d9fff" }
+    ]
+  },
+  {
+    key: "tool_calls",
+    label: "工具调用",
+    lines: [
+      { key: "tool_calls", label: "工具调用", color: "#ef5f6b" }
+    ]
+  }
+];
 
-// Catmull-Rom spline converted to cubic Bezier segments.  This is what makes
-// the curve smooth: straight L segments between sparse daily buckets read as
-// a jagged polyline, while the spline keeps the data points exact and bends
-// the line between them.
+function groupDef(key) {
+  for (var i = 0; i < SERIES_GROUPS.length; i++) {
+    if (SERIES_GROUPS[i].key === key) return SERIES_GROUPS[i];
+  }
+  return SERIES_GROUPS[0];
+}
+
+// Catmull-Rom spline converted to cubic Bezier segments.  Straight L
+// segments between sparse daily buckets read as a jagged polyline, while
+// the spline keeps the data points exact and bends the line between them.
 function splinePath(points) {
   if (!points.length) return "";
   if (points.length === 1) {
@@ -269,11 +335,10 @@ function splinePath(points) {
   }
   return d;
 }
-
 function renderLineChart(buckets) {
   var host = qs("#chart");
-  var metric = metricDef(state.metric);
-  renderMetricToolbar(metric);
+  var group = groupDef(state.metric);
+  renderMetricToolbar(group);
 
   if (!buckets.length) {
     host.innerHTML = "<div class=\"empty\">当前周期暂无数据</div>";
@@ -282,71 +347,81 @@ function renderLineChart(buckets) {
   }
 
   var width = Math.max(560, host.clientWidth || 860);
-  var height = 280;
-  var pad = { top: 18, right: 18, bottom: 28, left: 60 };
+  var height = 300;
+  var pad = { top: 20, right: 20, bottom: 30, left: 62 };
   var plotW = width - pad.left - pad.right;
   var plotH = height - pad.top - pad.bottom;
 
-  var values = buckets.map(function (b) { return Number(b[metric.key]) || 0; });
-  var max = Math.max.apply(null, values.concat([0]));
-  // Anchor the y axis at zero so the area fill is meaningful, then leave
-  // head room for the peak label.
-  var top = max === 0 ? 1 : max * 1.14;
-  var span = top;
+  // One scale shared by every line in the group so the comparison is
+  // honest.  Interaction counts are tiny next to token totals, so groups
+  // that mix them are not offered.
+  var all = [];
+  group.lines.forEach(function (line) {
+    buckets.forEach(function (b) { all.push(Number(b[line.key]) || 0); });
+  });
+  var max = Math.max.apply(null, all.concat([0]));
+  var top = max === 0 ? 1 : max * 1.16;
   var stepX = buckets.length > 1 ? plotW / (buckets.length - 1) : 0;
 
   function xAt(i) { return pad.left + stepX * i; }
-  function yAt(v) { return pad.top + plotH - (v / span) * plotH; }
+  function yAt(v) { return pad.top + plotH - (v / top) * plotH; }
 
-  var points = values.map(function (v, i) { return [xAt(i), yAt(v)]; });
-  var linePath = splinePath(points);
-  var areaPath = points.length > 1
-    ? linePath + "L" + xAt(points.length - 1).toFixed(1)
-      + " " + (pad.top + plotH).toFixed(1)
-      + " L" + xAt(0).toFixed(1) + " " + (pad.top + plotH).toFixed(1) + " Z"
-    : "";
-
-  var gradId = "grad-" + metric.key;
   var parts = [];
   parts.push("<svg viewBox=\"0 0 " + width + " " + height + "\" role=\"img\">");
-  parts.push("<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">",
-             "<stop offset=\"0%\" stop-color=\"" + metric.color + "\" stop-opacity=\"0.40\"/>",
-             "<stop offset=\"100%\" stop-color=\"" + metric.color + "\" stop-opacity=\"0.02\"/>",
-             "</linearGradient></defs>");
 
+  // horizontal grid + y labels
   var ticks = 4;
   for (var t = 0; t <= ticks; t++) {
-    var v = (span * t) / ticks;
+    var v = (top * t) / ticks;
     var y = yAt(v);
-    parts.push("<line class=\"grid-line\" x1=\"" + pad.left + "\" y1=\"" + y.toFixed(1),
+    parts.push("<line class=\"grid-line\" x1=\"" + pad.left + "\" y1=\"" + y.toFixed(1)
                + "\" x2=\"" + (width - pad.right) + "\" y2=\"" + y.toFixed(1) + "\"/>");
-    parts.push("<text class=\"axis-label\" x=\"" + (pad.left - 9) + "\" y=\"",
+    parts.push("<text class=\"axis-label\" x=\"" + (pad.left - 9) + "\" y=\""
                + (y + 3.5).toFixed(1) + "\" text-anchor=\"end\">" + esc(fmt(v)) + "</text>");
   }
 
+  // x labels, thinned so they never overlap
   var every = Math.max(1, Math.ceil(buckets.length / 14));
   buckets.forEach(function (b, i) {
     if (i % every !== 0 && i !== buckets.length - 1) return;
-    parts.push("<text class=\"axis-label\" x=\"" + xAt(i).toFixed(1) + "\" y=\"",
-               + (height - 9) + "\" text-anchor=\"middle\">" + esc(shortLabel(b.label)) + "</text>");
+    parts.push("<text class=\"axis-label\" x=\"" + xAt(i).toFixed(1) + "\" y=\""
+               + (height - 10) + "\" text-anchor=\"middle\">" + esc(shortLabel(b.label)) + "</text>");
   });
 
-  if (areaPath) {
-    parts.push("<path class=\"series-area\" d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\" stroke=\"none\"/>");
-  }
-  parts.push("<path class=\"series-path\" d=\"" + linePath + "\" stroke=\"" + metric.color + "\"/>");
+  // One smooth curve per series.  No area fill: on a dark background the
+  // stacked fills hide each other, while bare lines stay readable.
+  var legend = [];
+  var peakAll = 0;
+  group.lines.forEach(function (line) {
+    var values = buckets.map(function (b) { return Number(b[line.key]) || 0; });
+    var points = values.map(function (v, i) { return [xAt(i), yAt(v)]; });
+    var d = splinePath(points);
+    if (!d) return;
+    parts.push("<path class=\"series-path\" d=\"" + d + "\" stroke=\"" + line.color
+               + "\" fill=\"none\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
+    // mark the peak of this line
+    var peakIndex = 0;
+    values.forEach(function (v, i) { if (v > values[peakIndex]) peakIndex = i; });
+    if (values[peakIndex] > 0) {
+      peakAll = Math.max(peakAll, values[peakIndex]);
+      parts.push("<circle class=\"dot peak\" cx=\"" + xAt(peakIndex).toFixed(1)
+                 + "\" cy=\"" + yAt(values[peakIndex]).toFixed(1) + "\" r=\"3.6\" fill=\""
+                 + line.color + "\"/>");
+    }
+    legend.push({ label: line.label, color: line.color });
+  });
 
-  // Mark only the peak so the curve stays clean when there are many buckets.
-  var peakIndex = 0;
-  values.forEach(function (v, i) { if (v > values[peakIndex]) peakIndex = i; });
-  if (values[peakIndex] > 0) {
-    parts.push("<circle class=\"dot peak\" cx=\"" + xAt(peakIndex).toFixed(1)
-               + "\" cy=\"" + yAt(values[peakIndex]).toFixed(1) + "\" r=\"4\" fill=\""
-               + metric.color + "\"/>");
-    parts.push("<text class=\"peak-label\" x=\"" + xAt(peakIndex).toFixed(1)
-               + "\" y=\"" + (yAt(values[peakIndex]) - 10).toFixed(1)
-               + "\" text-anchor=\"middle\">" + esc(fmt(values[peakIndex])) + "</text>");
-  }
+  // inline series labels at the right edge so the reader does not have to
+  // look up and down between legend and chart
+  group.lines.forEach(function (line, index) {
+    var values = buckets.map(function (b) { return Number(b[line.key]) || 0; });
+    if (!values.length) return;
+    var last = values[values.length - 1];
+    var y = yAt(last) + index * 13 - (group.lines.length - 1) * 6.5;
+    parts.push("<text class=\"series-label\" x=\"" + (width - pad.right + 4)
+               + "\" y=\"" + y.toFixed(1) + "\" fill=\"" + line.color + "\">"
+               + esc(line.label) + "</text>");
+  });
 
   parts.push("<line class=\"hover-line\" id=\"hoverLine\" x1=\"0\" y1=\"" + pad.top
              + "\" x2=\"0\" y2=\"" + (pad.top + plotH) + "\" style=\"display:none\"/>");
@@ -354,10 +429,87 @@ function renderLineChart(buckets) {
   parts.push("<div class=\"linechart-tip\" id=\"chartTip\"></div>");
   host.innerHTML = parts.join("");
 
-  qs("#chartHint").textContent = "指标 " + metric.label + " · 共 "
-    + buckets.length + " 个时间桶 · 峰值 " + fmt(max);
+  qs("#chartHint").textContent = group.label + " \u00b7 \u5171 " + buckets.length
+    + " \u4e2a\u65f6\u95f4\u6876 \u00b7 \u5cf0\u503c " + fmt(peakAll);
 
-  attachChartHover(host, buckets, metric, xAt, width);
+  attachChartHover(host, buckets, group, xAt, width);
+}
+// Metric toolbar: builds once, then just reflects the active group.
+function renderMetricToolbar(group) {
+  var host = qs("#seriesLegend");
+  if (!host) return;
+  if (host.dataset.built !== "1") {
+    host.dataset.built = "1";
+    var wrap = document.createElement("div");
+    wrap.className = "chart-toolbar";
+    SERIES_GROUPS.forEach(function (g) {
+      var chip = document.createElement("span");
+      chip.className = "chip" + (g.key === state.metric ? " on" : "");
+      chip.textContent = g.label;
+      chip.dataset.metric = g.key;
+      chip.addEventListener("click", function () {
+        state.metric = g.key;
+        renderMetricToolbar(groupDef(state.metric));
+        renderLineChart(state.series);
+      });
+      wrap.appendChild(chip);
+    });
+    host.innerHTML = "";
+    host.appendChild(wrap);
+  }
+  Array.prototype.forEach.call(host.querySelectorAll(".chip"), function (chip) {
+    var on = chip.dataset.metric === state.metric;
+    chip.classList.toggle("on", on);
+    if (on) {
+      chip.style.borderColor = group.lines[0].color;
+      chip.style.color = group.lines[0].color;
+    } else {
+      chip.style.borderColor = "";
+      chip.style.color = "";
+    }
+  });
+}
+
+// Tooltip lists every line of the active group for the hovered bucket.
+function attachChartHover(host, buckets, group, xAt, width) {
+  var tip = qs("#chartTip");
+  var hoverLine = qs("#hoverLine");
+  if (!tip) return;
+  host.addEventListener("mousemove", function (event) {
+    var rect = host.getBoundingClientRect();
+    var relX = (event.clientX - rect.left) * (width / rect.width);
+    var best = 0;
+    var bestDist = Infinity;
+    buckets.forEach(function (b, i) {
+      var d = Math.abs(xAt(i) - relX);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    var bucket = buckets[best];
+    if (!bucket) return;
+    if (hoverLine) {
+      hoverLine.setAttribute("x1", String(xAt(best)));
+      hoverLine.setAttribute("x2", String(xAt(best)));
+      hoverLine.style.display = "block";
+    }
+    var rows = group.lines.map(function (line) {
+      return "<div class=\"t-row\"><span><i style=\"background:" + line.color
+        + "\"></i>" + esc(line.label) + "</span><span>"
+        + fmtFull(bucket[line.key]) + "</span></div>";
+    }).join("");
+    tip.innerHTML = "<div class=\"t-title\">" + esc(bucket.label) + "</div>" + rows
+      + "<div class=\"t-row\"><span>\u4ea4互次数</span><span>"
+      + fmtFull(bucket.interactions) + "</span></div>"
+      + "<div class=\"t-row\"><span>\u547d中率</span><span>"
+      + pct(bucket.cache_hit_ratio) + "</span></div>";
+    tip.classList.add("on");
+    var leftPct = (xAt(best) / width) * 100;
+    tip.style.left = Math.min(70, Math.max(0, leftPct)) + "%";
+    tip.style.top = "6px";
+  });
+  host.addEventListener("mouseleave", function () {
+    tip.classList.remove("on");
+    if (hoverLine) hoverLine.style.display = "none";
+  });
 }
 function shortLabel(label) {
   // 2026-10-22 -> 10-22 ; 2026-W42 -> W42 ; 2026-10 -> 10月
@@ -408,47 +560,6 @@ function attachChartHover(host, buckets, metric, xAt, width) {
   });
 }
 
-function renderMetricToolbar(metric) {
-  var host = qs("#seriesLegend");
-  if (!host) return;
-  if (host.dataset.built !== "1") {
-    host.dataset.built = "1";
-    var wrap = document.createElement("div");
-    wrap.className = "chart-toolbar";
-    METRICS.forEach(function (m) {
-      var chip = document.createElement("span");
-      chip.className = "chip" + (m.key === state.metric ? " on" : "");
-      chip.textContent = m.label;
-      chip.dataset.metric = m.key;
-      chip.addEventListener("click", function () {
-        state.metric = m.key;
-        renderMetricToolbar(metricDef(state.metric));
-        renderLineChart(state.series);
-      });
-      wrap.appendChild(chip);
-    });
-    host.innerHTML = "";
-    host.appendChild(wrap);
-  }
-  // Reflect the active metric and its colour in the toolbar.
-  Array.prototype.forEach.call(host.querySelectorAll(".chip"), function (chip) {
-    var on = chip.dataset.metric === state.metric;
-    chip.classList.toggle("on", on);
-    if (on && metric) {
-      chip.style.borderColor = metric.color;
-      chip.style.color = metric.color;
-    } else {
-      chip.style.borderColor = "";
-      chip.style.color = "";
-    }
-  });
-  var title = document.createElement("span");
-  title.className = "chart-metric-title";
-  title.textContent = metric ? metric.label : "";
-  var existing = host.querySelector(".chart-metric-title");
-  if (existing) existing.replaceWith(title);
-  else host.appendChild(title);
-}
 
 // Legacy stacked bars are replaced by the line chart above; kept as a helper
 // for the empty state message only.
@@ -467,13 +578,9 @@ function renderKpis(data) {
     { label: "输出 Token", value: fmt(t.output_tokens), extra: "推理 " + fmt(t.reasoning_tokens) },
     { label: "缓存命中", value: fmt(t.cache_read_tokens),
       extra: "命中率 " + pct(t.cache_hit_ratio), accent: true },
-    { label: "缓存写入", value: fmt(t.cache_write_tokens), extra: "cache creation" },
     { label: "交互次数", value: fmtFull(t.interactions), extra: "用户提问轮次" },
     { label: "LLM 调用", value: fmtFull(t.llm_calls), extra: "模型请求数" },
     { label: "工具调用", value: fmtFull(t.tool_calls), extra: "tool calls" },
-    { label: "使用工具", value: String(t.tool_count), extra: t.tools.join(", ") },
-    { label: "使用模型", value: String(t.model_count),
-      extra: t.models.slice(0, 3).join(", ") }
   ];
   qs("#kpis").innerHTML = cards.map(function (c) {
     return "<div class=\"kpi" + (c.accent ? " accent" : "") + "\">"
@@ -695,7 +802,7 @@ async function boot() {
     qs("#dbPath").textContent = "数据库: " + info.db_path;
     buildChips(qs("#toolChips"), state.knownTools, state.tools,
                 function () { load(); }, true);
-    buildChips(qs("#modelChips"), state.knownModels, state.models, function () { load(); });
+    buildModelSelect(info.models);
   } catch (err) {
     qs("#status").textContent = "初始化失败: " + err.message;
   }
