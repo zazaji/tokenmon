@@ -17,7 +17,7 @@ try:
 except ImportError:  # pragma: no cover - Python < 3.9
     ZoneInfo = None
 
-from .model import METRIC_KEYS, UsageRecord
+from .model import METRIC_KEYS, UsageRecord, to_utc
 
 PERIODS = ("day", "week", "month")
 
@@ -159,6 +159,25 @@ def _prev_month(moment: datetime) -> datetime:
     if moment.month == 1:
         return moment.replace(year=moment.year - 1, month=12)
     return moment.replace(month=moment.month - 1)
+
+
+def shift_period(period: str, anchor, tz=None, steps: int = -1):
+    """Move an anchor back (steps<0) or forward (steps>0) by whole periods.
+
+    Used by the previous / next period buttons: the UI keeps an anchor date
+    and asks the server for the window that starts one period earlier or
+    later, so the user can walk the history without changing span.
+    """
+    tz = tz or timezone.utc
+    anchor_dt = (to_utc(anchor) or datetime.now(timezone.utc)).astimezone(tz)
+    if period == "day":
+        return anchor_dt + timedelta(days=steps)
+    if period == "week":
+        return anchor_dt + timedelta(days=7 * steps)
+    year, month = anchor_dt.year, anchor_dt.month
+    total = year * 12 + (month - 1) + steps
+    new_year, new_month = divmod(total, 12)
+    return anchor_dt.replace(year=new_year, month=new_month + 1)
 
 
 def resolve_range(period: str, anchor: datetime | None = None, tz=None,
@@ -321,17 +340,23 @@ def build_account_report(store, tz_name=None, since=None, until=None,
 
 
 def build_report(store, period: str = "day", tools: Sequence[str] | None = None,
-                 tz_name: str | None = None, span: int = 1) -> dict:
+                 tz_name: str | None = None, span: int = 1,
+                 anchor=None) -> dict:
     """Build the full analytics payload for the web UI and the CLI.
 
     The report contains a bucket series plus breakdowns by tool, model,
     project and tool+model, so the front end can switch dimension without a
     second request.
+
+    anchor selects which period the window ends on (default now).  Passing an
+    earlier date moves the whole window back so the UI can offer previous /
+    next period navigation; span is how many periods the window covers.
     """
     if period not in PERIODS:
         period = "day"
     tz = get_zone(tz_name)
-    start, end = resolve_range(period, tz=tz, span=span)
+    anchor_dt = to_utc(anchor) if anchor is not None else None
+    start, end = resolve_range(period, anchor=anchor_dt, tz=tz, span=span)
 
     records = list(store.iter_records(tools=tools, since=start, until=end))
     for record in records:

@@ -39,6 +39,7 @@ from .analysis import (
     build_report,
     get_zone,
     resolve_range,
+    to_utc,
 )
 from .collectors import DISPLAY_NAMES, TOOL_ORDER, known
 from .model import UsageRecord
@@ -56,8 +57,9 @@ def _filters() -> dict:
         span = max(1, min(60, int(request.args.get("span", 1))))
     except (TypeError, ValueError):
         span = 1
+    anchor = request.args.get("anchor") or None
     return {"period": period, "tools": tools or None, "models": models or None,
-            "tz": tz_name, "span": span}
+            "tz": tz_name, "span": span, "anchor": anchor}
 
 
 def create_app(db_path: str | None = None) -> Flask:
@@ -92,13 +94,17 @@ def create_app(db_path: str | None = None) -> Flask:
         f = _filters()
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
-                                tz_name=f["tz"], span=f["span"])
+                                tz_name=f["tz"], span=f["span"],
+                                anchor=f["anchor"])
             record_count = store.count()
             last_run = store.last_runs(1)
         return jsonify({
             "period": f["period"],
             "timezone": data["timezone"],
             "range": data["range"],
+            "anchor": f["anchor"],
+            "span": f["span"],
+            "period": f["period"],
             "totals": data["totals"],
             "accounts": data["accounts"],
             "by_tool": data["by_tool"],
@@ -112,7 +118,8 @@ def create_app(db_path: str | None = None) -> Flask:
         f = _filters()
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
-                                tz_name=f["tz"], span=f["span"])
+                                tz_name=f["tz"], span=f["span"],
+                                anchor=f["anchor"])
         return jsonify({
             "period": f["period"],
             "timezone": data["timezone"],
@@ -124,7 +131,8 @@ def create_app(db_path: str | None = None) -> Flask:
         f = _filters()
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
-                                tz_name=f["tz"], span=f["span"])
+                                tz_name=f["tz"], span=f["span"],
+                                anchor=f["anchor"])
             if f["models"]:
                 filtered = [r for r in store.iter_records(tools=f["tools"],
                                                           models=f["models"])]
@@ -147,11 +155,33 @@ def create_app(db_path: str | None = None) -> Flask:
         with open_store() as store:
             from .analysis import resolve_range
 
-            start, end = resolve_range(f["period"], tz=get_zone(f["tz"]),
-                                       span=f["span"])
+            start, end = resolve_range(
+                f["period"],
+                anchor=to_utc(f["anchor"]) if f["anchor"] else None,
+                tz=get_zone(f["tz"]), span=f["span"])
             data = build_account_report(store, tz_name=f["tz"], since=start,
                                         until=end, tools=f["tools"])
         return jsonify(data)
+
+    @app.get("/api/nav")
+    def api_nav():
+        """Previous / next period anchors for the current selection."""
+        f = _filters()
+        from .analysis import shift_period
+
+        tz = get_zone(f["tz"])
+        current = to_utc(f["anchor"]) if f["anchor"] else datetime.now(tz)
+        previous = shift_period(f["period"], current, tz, steps=-(f["span"] or 1))
+        nxt = shift_period(f["period"], current, tz, steps=(f["span"] or 1))
+        now = datetime.now(tz)
+        return jsonify({
+            "period": f["period"],
+            "span": f["span"],
+            "current": current.isoformat(),
+            "previous": previous.isoformat(),
+            "next": nxt.isoformat(),
+            "next_is_future": nxt > now,
+        })
 
     @app.get("/api/tools")
     def api_tools():
@@ -231,7 +261,8 @@ def create_app(db_path: str | None = None) -> Flask:
         f = _filters()
         with open_store() as store:
             data = build_report(store, period=f["period"], tools=f["tools"],
-                                tz_name=f["tz"], span=f["span"])
+                                tz_name=f["tz"], span=f["span"],
+                                anchor=f["anchor"])
             rows = list(store.iter_records(tools=f["tools"], models=f["models"]))
         buffer = io.StringIO()
         writer = csv.writer(buffer)
