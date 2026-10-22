@@ -180,18 +180,32 @@ function syncControls() {
   qs("#tz").value = state.tz;
 }
 
-function buildChips(container, values, selected, onChange) {
+// Chip row helper.  When single is true the row behaves like a radio group:
+// selecting a chip replaces the previous selection, clicking the active chip
+// clears it.
+function buildChips(container, values, selected, onChange, single) {
   container.innerHTML = "";
   values.forEach(function (value) {
+    var on = selected.indexOf(value) >= 0;
     var chip = document.createElement("span");
-    chip.className = "chip" + (selected.indexOf(value) >= 0 ? " on" : "");
+    chip.className = "chip" + (on ? " on" : "");
     chip.textContent = value;
-    chip.title = value;
+    chip.title = single ? "单选：" + value : value;
+    chip.dataset.value = value;
     chip.addEventListener("click", function () {
-      var index = selected.indexOf(value);
-      if (index >= 0) selected.splice(index, 1);
-      else selected.push(value);
-      chip.classList.toggle("on");
+      if (single) {
+        var wasOn = selected.indexOf(value) >= 0;
+        selected.length = 0;
+        if (!wasOn) selected.push(value);
+      } else {
+        var index = selected.indexOf(value);
+        if (index >= 0) selected.splice(index, 1);
+        else selected.push(value);
+      }
+      // Reflect the new state on every chip of this row.
+      Array.prototype.forEach.call(container.children, function (c) {
+        c.classList.toggle("on", selected.indexOf(c.dataset.value) >= 0);
+      });
       onChange();
     });
     container.appendChild(chip);
@@ -637,7 +651,8 @@ async function boot() {
     state.knownTools = info.tools.map(function (t) { return t.key; });
     state.knownModels = info.models;
     qs("#dbPath").textContent = "数据库: " + info.db_path;
-    buildChips(qs("#toolChips"), state.knownTools, state.tools, function () { load(); });
+    buildChips(qs("#toolChips"), state.knownTools, state.tools,
+                function () { load(); }, true);
     buildChips(qs("#modelChips"), state.knownModels, state.models, function () { load(); });
   } catch (err) {
     qs("#status").textContent = "初始化失败: " + err.message;
