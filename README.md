@@ -13,13 +13,7 @@
 | `zcode` | ZCode CLI | `~/.zcode/cli/db/db.sqlite` 的 `model_usage` 表 |
 | `opencode` | opencode | `~/.local/share/opencode/opencode.db`（Windows: `%APPDATA%\opencode`） |
 | `deepseek-harness` | DeepSeek Harness | `~/.dsh/sessions/*/session-*/session.v4.jsonl[.zstd]` |
-| `antigravity` | Antigravity | VS Code 用户数据目录下的 JSONL / `*.vscdb` |
-| `qwencode` | QwenCode | JSONL 会话日志（best-effort） |
-| `cursor` | Cursor | VS Code 用户数据目录下的 JSONL / `*.vscdb` |
-
-后三个工具没有公开的用量格式，采用**通用扫描器**：遍历候选目录中的
-`*.jsonl / *.json / *.ndjson` 与 SQLite（`ItemTable`、`workspaceStorage`），
-用宽松字段匹配提取 token。找不到数据时报 warning 并跳过，不会编造数字。
+| `qwencode` | QwenCode CLI | `~/.qwen/usage/token-usage-*.jsonl` + `usage_record.jsonl`，可选经 SSH 读远端 |
 
 ## 快速开始
 
@@ -41,8 +35,8 @@ python tokenmon.py report --period week  --span 4
 python tokenmon.py report --period month --span 6
 
 # 5. Web 界面
-python tokenmon.py serve --port 8765
-# 打开 http://127.0.0.1:8765/
+python tokenmon.py serve --port 8770
+# 打开 http://127.0.0.1:8770/
 ```
 
 ## 统计口径
@@ -99,6 +93,82 @@ Web 界面新增「账户余额与额度」和「已花费金额」两张表，�
   `TOKENMON_CURSOR_HOME`；数据库用 `TOKENMON_DB`。
 - `--source-dir DIR` 可在采集时指定任意目录（测试、导出的数据包）。
 
+## 部署
+
+### 本机常驻（macOS / Linux）
+
+```bash
+cd /Users/ou/project/pc_project/tokenmon
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+./.venv/bin/python tokenmon.py collect          # 先采一次
+./.venv/bin/python tokenmon.py serve            # 默认 127.0.0.1:8770
+```
+
+如需开机自启，用 launchd（macOS）或 systemd user unit（Linux）托管同一条
+`serve` 命令即可，无需额外代码。
+
+### 远端 Linux（systemd user service）
+
+当前生产实例部署在 `zazaji@10.10.10.75:~`，端口 **8770**。
+
+```bash
+# 1. 同步代码
+rsync -av --exclude .venv --exclude .git --exclude __pycache__ \
+  ./ zazaji@10.10.10.75:~/projects/tokenmon/
+
+# 2. 建环境
+ssh zazaji@10.10.10.75 \
+  "cd ~/projects/tokenmon && python3 -m venv .venv && \
+   ./.venv/bin/pip install -r requirements.txt"
+
+# 3. 采一次数据
+ssh zazaji@10.10.10.75 "cd ~/projects/tokenmon && ./.venv/bin/python tokenmon.py collect"
+
+# 4. 安装 systemd user service（linger 已开启，注销后仍运行）
+ssh zazaji@10.10.10.75 "mkdir -p ~/.config/systemd/user"
+```
+
+`~/.config/systemd/user/tokenmon.service`：
+
+```ini
+[Unit]
+Description=tokenmon AI token usage dashboard
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/projects/tokenmon
+ExecStart=%h/projects/tokenmon/.venv/bin/python tokenmon.py serve \
+          --host 0.0.0.0 --port 8770
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+```
+
+```bash
+ssh zazaji@10.10.10.75 "systemctl --user daemon-reload && \
+  systemctl --user enable --now tokenmon.service && \
+  systemctl --user status tokenmon.service --no-pager"
+```
+
+访问 `http://10.10.10.75:8770/`。
+
+> **端口说明**：8770 是本项目统一端口。远端 8765 已被 AgentNode 占用，
+> 因此部署时显式指定 8770；本机默认值也已改为 8770。
+
+### 采集远端 QwenCode
+
+QwenCode 常跑在开发机上，而面板在笔记本上。给采集器一个 ssh 目标即可：
+
+```bash
+TOKENMON_QWEN_SSH=zazaji@10.10.10.75 python tokenmon.py collect --tools qwencode
+```
+
+只读取远端 `~/.qwen/usage/token-usage-*.jsonl` 与 `~/.qwen/usage_record.jsonl`，
+不回传其他内容，也不写入远端。
+
 ## Web API
 
 | 端点 | 说明 |
@@ -122,8 +192,8 @@ Web 界面新增「账户余额与额度」和「已花费金额」两张表，�
 示例：
 
 ```bash
-curl "http://127.0.0.1:8765/api/summary?period=week&span=4&tz=Asia/Shanghai"
-curl "http://127.0.0.1:8765/api/breakdown?period=day&dimension=model"
+curl "http://127.0.0.1:8770/api/summary?period=week&span=4&tz=Asia/Shanghai"
+curl "http://127.0.0.1:8770/api/breakdown?period=day&dimension=model"
 ```
 
 ## 项目结构
