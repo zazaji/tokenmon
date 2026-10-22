@@ -270,3 +270,45 @@ select {
   background: var(--panel-2);
   border: 1px solid var(--border);
 }
+
+/* ---- line chart polish ---- */
+.chart { min-height: 300px; }
+.linechart svg { display: block; width: 100%; height: 300px; }
+.linechart .series-path {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,.35));
+}
+.linechart .series-area { stroke: none; }
+.linechart .dot {
+  stroke: var(--panel);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.linechart .peak-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.linechart .grid-line { stroke: var(--border); stroke-width: 1; opacity: .6; }
+.linechart .axis-label { fill: var(--muted); font-size: 10.5px; }
+.linechart .hover-line {
+  stroke: var(--text);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: .45;
+}
+.linechart-tip {
+  background: rgba(11,13,18,.96);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 12px;
+  min-width: 156px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  backdrop-filter: blur(4px);
+}

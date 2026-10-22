@@ -74,12 +74,26 @@ function qsa(sel) {
   return Array.prototype.slice.call(document.querySelectorAll(sel));
 }
 
+// Compact token formatting: B / M / k with at most 3 significant digits.
+//   1_884_229_336 -> 1.88B   348_583_129 -> 349M   14_200 -> 14.2k
 function fmt(n) {
   if (n === null || n === undefined) return "-";
-  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(2) + "B";
-  if (Math.abs(n) >= 1e6) return (n / 1e6).toFixed(2) + "M";
-  if (Math.abs(n) >= 1e3) return (n / 1e3).toFixed(1) + "k";
-  return String(n);
+  var value = Number(n);
+  if (!isFinite(value)) return "-";
+  var sign = value < 0 ? "-" : "";
+  var abs = Math.abs(value);
+  if (abs >= 1e9) return sign + sig3(abs / 1e9) + "B";
+  if (abs >= 1e6) return sign + sig3(abs / 1e6) + "M";
+  if (abs >= 1e3) return sign + sig3(abs / 1e3) + "k";
+  return sign + String(Math.round(abs));
+}
+
+// Round to 3 significant digits and drop trailing zeros so the label stays
+// short: 1.005 -> "1.01", 1.0 -> "1", 349.0 -> "349".
+function sig3(x) {
+  if (x >= 100) return String(Math.round(x));
+  if (x >= 10) return String(Math.round(x * 10) / 10);
+  return String(Math.round(x * 100) / 100);
 }
 
 function fmtFull(n) {
@@ -227,6 +241,35 @@ function buildTimezoneOptions() {
 
 // ------------------------------------------------------------- line chart
 
+// ------------------------------------------------------------- line chart
+
+// Catmull-Rom spline converted to cubic Bezier segments.  This is what makes
+// the curve smooth: straight L segments between sparse daily buckets read as
+// a jagged polyline, while the spline keeps the data points exact and bends
+// the line between them.
+function splinePath(points) {
+  if (!points.length) return "";
+  if (points.length === 1) {
+    return "M" + points[0][0].toFixed(1) + " " + points[0][1].toFixed(1);
+  }
+  var d = "M" + points[0][0].toFixed(1) + " " + points[0][1].toFixed(1);
+  for (var i = 0; i < points.length - 1; i++) {
+    var p0 = points[i - 1] || points[i];
+    var p1 = points[i];
+    var p2 = points[i + 1];
+    var p3 = points[i + 2] || p2;
+    var k = 1 / 6;
+    var c1x = p1[0] + (p2[0] - p0[0]) * k * 2;
+    var c1y = p1[1] + (p2[1] - p0[1]) * k * 2;
+    var c2x = p2[0] - (p3[0] - p1[0]) * k * 2;
+    var c2y = p2[1] - (p3[1] - p1[1]) * k * 2;
+    d += "C" + c1x.toFixed(1) + " " + c1y.toFixed(1) + " "
+      + c2x.toFixed(1) + " " + c2y.toFixed(1) + " "
+      + p2[0].toFixed(1) + " " + p2[1].toFixed(1) + " ";
+  }
+  return d;
+}
+
 function renderLineChart(buckets) {
   var host = qs("#chart");
   var metric = metricDef(state.metric);
@@ -239,74 +282,74 @@ function renderLineChart(buckets) {
   }
 
   var width = Math.max(560, host.clientWidth || 860);
-  var height = 260;
-  var pad = { top: 14, right: 16, bottom: 26, left: 58 };
+  var height = 280;
+  var pad = { top: 18, right: 18, bottom: 28, left: 60 };
   var plotW = width - pad.left - pad.right;
   var plotH = height - pad.top - pad.bottom;
 
   var values = buckets.map(function (b) { return Number(b[metric.key]) || 0; });
   var max = Math.max.apply(null, values.concat([0]));
-  var min = Math.min.apply(null, values.concat([0]));
-  // Give a flat series some visible headroom instead of a straight line at 0.
-  if (max === min) { max = max + 1; min = min > 0 ? 0 : min; }
-  var span = max - min || 1;
+  // Anchor the y axis at zero so the area fill is meaningful, then leave
+  // head room for the peak label.
+  var top = max === 0 ? 1 : max * 1.14;
+  var span = top;
   var stepX = buckets.length > 1 ? plotW / (buckets.length - 1) : 0;
 
   function xAt(i) { return pad.left + stepX * i; }
-  function yAt(v) {
-    return pad.top + plotH - ((v - min) / span) * plotH;
-  }
+  function yAt(v) { return pad.top + plotH - (v / span) * plotH; }
 
+  var points = values.map(function (v, i) { return [xAt(i), yAt(v)]; });
+  var linePath = splinePath(points);
+  var areaPath = points.length > 1
+    ? linePath + "L" + xAt(points.length - 1).toFixed(1)
+      + " " + (pad.top + plotH).toFixed(1)
+      + " L" + xAt(0).toFixed(1) + " " + (pad.top + plotH).toFixed(1) + " Z"
+    : "";
+
+  var gradId = "grad-" + metric.key;
   var parts = [];
   parts.push("<svg viewBox=\"0 0 " + width + " " + height + "\" role=\"img\">");
+  parts.push("<defs><linearGradient id=\"" + gradId + "\" x1=\"0\" y1=\"0\" x2=\"0\" y2=\"1\">",
+             "<stop offset=\"0%\" stop-color=\"" + metric.color + "\" stop-opacity=\"0.40\"/>",
+             "<stop offset=\"100%\" stop-color=\"" + metric.color + "\" stop-opacity=\"0.02\"/>",
+             "</linearGradient></defs>");
 
-  // horizontal grid + y labels (4 ticks)
   var ticks = 4;
   for (var t = 0; t <= ticks; t++) {
-    var v = min + (span * t) / ticks;
+    var v = (span * t) / ticks;
     var y = yAt(v);
-    parts.push("<line class=\"grid-line\" x1=\"" + pad.left + "\" y1=\"" + y
-               + "\" x2=\"" + (width - pad.right) + "\" y2=\"" + y + "\"/>");
-    parts.push("<text class=\"axis-label\" x=\"" + (pad.left - 8) + "\" y=\""
-               + (y + 3) + "\" text-anchor=\"end\">" + esc(fmt(v)) + "</text>");
+    parts.push("<line class=\"grid-line\" x1=\"" + pad.left + "\" y1=\"" + y.toFixed(1),
+               + "\" x2=\"" + (width - pad.right) + "\" y2=\"" + y.toFixed(1) + "\"/>");
+    parts.push("<text class=\"axis-label\" x=\"" + (pad.left - 9) + "\" y=\"",
+               + (y + 3.5).toFixed(1) + "\" text-anchor=\"end\">" + esc(fmt(v)) + "</text>");
   }
 
-  // x labels (thin out when crowded)
-  var every = Math.ceil(buckets.length / 12);
+  var every = Math.max(1, Math.ceil(buckets.length / 14));
   buckets.forEach(function (b, i) {
     if (i % every !== 0 && i !== buckets.length - 1) return;
-    parts.push("<text class=\"axis-label\" x=\"" + xAt(i) + "\" y=\""
-               + (height - 8) + "\" text-anchor=\"middle\">"
-               + esc(shortLabel(b.label)) + "</text>");
+    parts.push("<text class=\"axis-label\" x=\"" + xAt(i).toFixed(1) + "\" y=\"",
+               + (height - 9) + "\" text-anchor=\"middle\">" + esc(shortLabel(b.label)) + "</text>");
   });
 
-  // area + line
-  var linePath = "";
-  var areaPath = "";
-  values.forEach(function (v, i) {
-    var cmd = (i === 0 ? "M" : "L");
-    linePath += cmd + xAt(i).toFixed(1) + " " + yAt(v).toFixed(1) + " ";
-  });
-  if (values.length > 1) {
-    areaPath = "M" + xAt(0).toFixed(1) + " " + yAt(min).toFixed(1) + " " + linePath
-      + "L" + xAt(values.length - 1).toFixed(1) + " " + yAt(min).toFixed(1) + " Z";
-  }
   if (areaPath) {
-    parts.push("<path class=\"series-area\" d=\"" + areaPath + "\" fill=\""
-               + metric.color + "\"/>");
+    parts.push("<path class=\"series-area\" d=\"" + areaPath + "\" fill=\"url(#" + gradId + ")\" stroke=\"none\"/>");
   }
-  parts.push("<path class=\"series-path\" d=\"" + linePath + "\" stroke=\""
-             + metric.color + "\"/>");
+  parts.push("<path class=\"series-path\" d=\"" + linePath + "\" stroke=\"" + metric.color + "\"/>");
 
-  values.forEach(function (v, i) {
-    parts.push("<circle class=\"dot\" cx=\"" + xAt(i).toFixed(1) + "\" cy=\""
-               + yAt(v).toFixed(1) + "\" r=\"2.6\" fill=\"" + metric.color
-               + "\" data-i=\"" + i + "\"/>");
-  });
+  // Mark only the peak so the curve stays clean when there are many buckets.
+  var peakIndex = 0;
+  values.forEach(function (v, i) { if (v > values[peakIndex]) peakIndex = i; });
+  if (values[peakIndex] > 0) {
+    parts.push("<circle class=\"dot peak\" cx=\"" + xAt(peakIndex).toFixed(1)
+               + "\" cy=\"" + yAt(values[peakIndex]).toFixed(1) + "\" r=\"4\" fill=\""
+               + metric.color + "\"/>");
+    parts.push("<text class=\"peak-label\" x=\"" + xAt(peakIndex).toFixed(1)
+               + "\" y=\"" + (yAt(values[peakIndex]) - 10).toFixed(1)
+               + "\" text-anchor=\"middle\">" + esc(fmt(values[peakIndex])) + "</text>");
+  }
 
-  parts.push("<line class=\"hover-line\" id=\"hoverLine\" x1=\"0\" y1=\""
-             + pad.top + "\" x2=\"0\" y2=\"" + (pad.top + plotH)
-             + "\" style=\"display:none\"/>");
+  parts.push("<line class=\"hover-line\" id=\"hoverLine\" x1=\"0\" y1=\"" + pad.top
+             + "\" x2=\"0\" y2=\"" + (pad.top + plotH) + "\" style=\"display:none\"/>");
   parts.push("</svg>");
   parts.push("<div class=\"linechart-tip\" id=\"chartTip\"></div>");
   host.innerHTML = parts.join("");
@@ -316,7 +359,6 @@ function renderLineChart(buckets) {
 
   attachChartHover(host, buckets, metric, xAt, width);
 }
-
 function shortLabel(label) {
   // 2026-10-22 -> 10-22 ; 2026-W42 -> W42 ; 2026-10 -> 10月
   var s = String(label);
