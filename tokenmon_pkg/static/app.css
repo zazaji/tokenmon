@@ -819,21 +819,18 @@ select:hover, .range-label:hover { border-color: #3a4252; }
 #chart { padding-bottom: 0; }
 #chartHint { margin-top: 4px; }
 
-/* model row nested under the tool filter */
-.model-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+/* model filter sits to the right of the tool filter and aligns its baseline
+   with the tool chips, which may wrap onto two lines */
+.filters { align-items: flex-end; }
+#modelRow {
+  flex: 0 0 auto;
+  min-width: 210px;
+  align-self: flex-end;
+  padding-bottom: 1px;
 }
-.model-row[hidden] { display: none; }
-.model-row label {
-  font-size: 11px;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .5px;
-}
-.model-row select { min-width: 200px; }
+#modelRow[hidden] { display: none; }
+#modelRow select { min-width: 200px; max-width: 260px; }
+#modelRow label { white-space: nowrap; }
 
 /* the chart card bottom padding is already provided by pad.bottom inside the
    svg, so remove the card padding there and tighten the hint line */
@@ -849,3 +846,37 @@ select:hover, .range-label:hover { border-color: #3a4252; }
 .chart-meta #chartHint { margin: 0; white-space: nowrap; }
 #chart { padding-bottom: 0; margin-bottom: -4px; }
 .card.wide:has(#chart) { padding-bottom: 8px; }
+
+/* Keep the model dropdown bottom-aligned with the tool chip row: the select
+   is taller than a chip, so flex-end on the container alone is not enough. */
+.filters > .group { align-self: flex-end; }
+#modelRow { align-self: flex-end; }
+#modelRow select { margin-bottom: 0; }
+#toolChips { padding-bottom: 0; }
+
+/* tool chips and the model dropdown share one row, bottom aligned */
+.filter-pair {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: nowrap;
+}
+.filter-pair-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.filter-pair-tools { flex: 1 1 auto; min-width: 0; }
+.filter-pair-item#modelRow { flex: 0 0 auto; min-width: 210px; }
+.filter-pair-item#modelRow[hidden] { display: none; }
+.filter-pair-item#modelRow select { min-width: 200px; max-width: 260px; }
+.filter-pair-item label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .6px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}

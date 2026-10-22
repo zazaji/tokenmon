@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tokenmon - AI 编程工具 Token 用量分析</title>
-<link rel="stylesheet" href="/static/app.css?v=14">
+<link rel="stylesheet" href="/static/app.css?v=19">
 </head>
 <body>
 <header class="topbar">
@@ -49,10 +49,12 @@
       <option value="90">90 个周期</option>
     </select>
   </div>
-  <div class="group grow wide">
-    <label>工具筛选（单选）</label>
-    <div class="chips" id="toolChips"></div>
-    <div class="model-row" id="modelRow" hidden>
+  <div class="group grow wide filter-pair">
+    <div class="filter-pair-item filter-pair-tools">
+      <label>工具筛选（单选）</label>
+      <div class="chips" id="toolChips"></div>
+    </div>
+    <div class="filter-pair-item" id="modelRow" hidden>
       <label for="modelSelect">模型</label>
       <select id="modelSelect"><option value="">全部模型</option></select>
     </div>
@@ -139,6 +141,6 @@
   <span id="status"></span>
 </footer>
 
-<script src="/static/app.js?v=14"></script>
+<script src="/static/app.js?v=19"></script>
 </body>
 </html>
