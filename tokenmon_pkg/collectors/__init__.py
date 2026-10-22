@@ -57,6 +57,19 @@ DISPLAY_NAMES = {
 }
 
 
+#: Short labels used where space is tight (filter chips, table cells).
+SHORT_NAMES = {
+    "codex": "Codex",
+    "claudecode": "CC",
+    "zcode": "ZCode",
+    "opencode": "OC",
+    "deepseek-harness": "DSH",
+    "antigravity": "AGY",
+    "qwencode": "Qwen",
+    "cursor": "Cursor",
+}
+
+
 def get(tool: str) -> BaseCollector:
     """Return the collector for ``tool`` or raise KeyError."""
     return REGISTRY[tool]

@@ -41,7 +41,7 @@ from .analysis import (
     resolve_range,
     to_utc,
 )
-from .collectors import DISPLAY_NAMES, TOOL_ORDER, known
+from .collectors import DISPLAY_NAMES, SHORT_NAMES, TOOL_ORDER, known
 from .model import UsageRecord
 from .store import Store
 
@@ -189,15 +189,23 @@ def create_app(db_path: str | None = None) -> Flask:
         with open_store() as store:
             models = store.distinct("model")
             projects = store.distinct("project")
+        # Why a tool has no data, in one line the UI can show verbatim.
+        reasons = {
+            "cursor": "未安装：未找到 Cursor 数据目录",
+            "qwencode": "未安装：未找到 QwenCode 数据目录",
+            "antigravity": "已安装但本地账本不含 token 数量（protobuf 仅存模型名）",
+        }
         return jsonify({
             "tools": [
                 {
                     "key": tool,
                     "name": DISPLAY_NAMES.get(tool, tool),
+                    "short": SHORT_NAMES.get(tool, tool),
                     "found": resolved[tool].found,
                     "roots": [str(r) for r in resolved[tool].roots],
                     "checked": [str(c) for c in resolved[tool].checked],
                     "notes": resolved[tool].notes,
+                    "reason": reasons.get(tool, ""),
                 }
                 for tool in TOOL_ORDER
             ],

@@ -38,6 +38,23 @@ var state = {
   metric: "token_split"
 };
 
+// Short labels keep the tool filter row compact; the full name stays in the
+// title attribute and in the tables.
+var TOOL_SHORT = {
+  codex: "Codex",
+  claudecode: "CC",
+  zcode: "ZCode",
+  opencode: "OC",
+  "deepseek-harness": "DSH",
+  antigravity: "AGY",
+  qwencode: "Qwen",
+  cursor: "Cursor"
+};
+
+function toolShort(name) {
+  return TOOL_SHORT[name] || name;
+}
+
 var TOOL_COLORS = {
   codex: "#5b8cff",
   claudecode: "#f0a742",
@@ -142,11 +159,6 @@ function initControls() {
     load();
   });
 
-  qs("#tz").addEventListener("change", function (e) {
-    state.tz = e.target.value;
-    load();
-  });
-
   qs("#prevPeriod").addEventListener("click", function () { shift(-1); });
   qs("#nextPeriod").addEventListener("click", function () { shift(1); });
   qs("#refresh").addEventListener("click", load);
@@ -171,19 +183,19 @@ function syncControls() {
     b.classList.toggle("active", b.dataset.value === state.period);
   });
   qs("#span").value = String(state.span);
-  qs("#tz").value = state.tz;
 }
 
 // Chip row helper.  When single is true the row behaves like a radio group:
 // selecting a chip replaces the previous selection, clicking the active chip
 // clears it.
-function buildChips(container, values, selected, onChange, single) {
+function buildChips(container, values, selected, onChange, single, labelOf) {
   container.innerHTML = "";
   values.forEach(function (value) {
     var on = selected.indexOf(value) >= 0;
     var chip = document.createElement("span");
     chip.className = "chip" + (on ? " on" : "");
-    chip.textContent = value;
+    var text = labelOf ? labelOf(value) : value;
+    chip.textContent = text;
     chip.title = single ? "单选：" + value : value;
     chip.dataset.value = value;
     chip.addEventListener("click", function () {
@@ -237,18 +249,7 @@ function buildModelSelect(models) {
   }
 }
 
-function buildTimezoneOptions() {
-  var zones = ["", "UTC", "Asia/Shanghai", "Asia/Singapore", "Asia/Tokyo",
-               "Europe/London", "Europe/Berlin", "America/New_York",
-               "America/Los_Angeles", "Australia/Sydney"];
-  var sel = qs("#tz");
-  zones.forEach(function (z) {
-    var opt = document.createElement("option");
-    opt.value = z;
-    opt.textContent = z || ("本地时区 (" + Intl.DateTimeFormat().resolvedOptions().timeZone + ")");
-    sel.appendChild(opt);
-  });
-}
+// Timezone selection was removed: the browser local zone is used by default.
 
 // ------------------------------------------------------------- line chart
 
@@ -347,7 +348,7 @@ function renderLineChart(buckets) {
   }
 
   var width = Math.max(560, host.clientWidth || 860);
-  var height = 320;
+  var height = 192;
   var pad = { top: 22, right: 18, bottom: 32, left: 62 };
   var plotW = width - pad.left - pad.right;
   var plotH = height - pad.top - pad.bottom;
@@ -384,9 +385,9 @@ function renderLineChart(buckets) {
   for (var t = 0; t <= ticks; t++) {
     var v = (top * t) / ticks;
     var y = yAt(v);
-    parts.push("<line class=\"grid-line\" x1=\"" + pad.left + "\" y1=\"" + y.toFixed(1)
+    parts.push("<line class=\"grid-line\" stroke=\"#333a48\" x1=\"" + pad.left + "\" y1=\"" + y.toFixed(1)
                + "\" x2=\"" + (width - pad.right) + "\" y2=\"" + y.toFixed(1) + "\"/>");
-    parts.push("<text class=\"axis-label\" x=\"" + (pad.left - 9) + "\" y=\""
+    parts.push("<text class=\"axis-label\" fill=\"#aab3c5\" x=\"" + (pad.left - 9) + "\" y=\""
                + (y + 3.5).toFixed(1) + "\" text-anchor=\"end\">" + esc(fmt(v)) + "</text>");
   }
 
@@ -394,7 +395,7 @@ function renderLineChart(buckets) {
   var every = Math.max(1, Math.ceil(buckets.length / 14));
   buckets.forEach(function (b, i) {
     if (i % every !== 0 && i !== buckets.length - 1) return;
-    parts.push("<text class=\"axis-label\" x=\"" + xAt(i).toFixed(1) + "\" y=\""
+    parts.push("<text class=\"axis-label\" fill=\"#aab3c5\" x=\"" + xAt(i).toFixed(1) + "\" y=\""
                + (height - 11) + "\" text-anchor=\"middle\">" + esc(shortLabel(b.label)) + "</text>");
   });
 
@@ -435,12 +436,12 @@ function renderLineChart(buckets) {
 
   // Peak value label above the tallest bar.
   if (totals[peakIndex] > 0) {
-    parts.push("<text class=\"peak-label\" x=\"" + xAt(peakIndex).toFixed(1)
+    parts.push("<text class=\"peak-label\" fill=\"#eef1f7\" x=\"" + xAt(peakIndex).toFixed(1)
                + "\" y=\"" + (yAt(totals[peakIndex]) - 8).toFixed(1)
                + "\" text-anchor=\"middle\">" + esc(fmt(totals[peakIndex])) + "</text>");
   }
 
-  parts.push("<line class=\"hover-line\" id=\"hoverLine\" x1=\"0\" y1=\"" + pad.top
+  parts.push("<line class=\"hover-line\" id=\"hoverLine\" stroke=\"#aab3c5\" x1=\"0\" y1=\"" + pad.top
              + "\" x2=\"0\" y2=\"" + (pad.top + plotH) + "\" style=\"display:none\"/>");
   parts.push("</svg>");
   parts.push("<div class=\"linechart-tip\" id=\"chartTip\"></div>");
@@ -649,11 +650,15 @@ function tableRows(rows, cells, colspan) {
   }).join("");
 }
 
+// Token columns use the compact formatter so every value reads as B / M / k.
+function tok(v) { return "<td class=\"num\">" + fmt(v) + "</td>"; }
+function cnt(v) { return "<td class=\"num\">" + fmtFull(v) + "</td>"; }
+
 function renderToolTable(rows) {
   qs("#toolTable tbody").innerHTML = tableRows(rows, function (r) {
-    return [txt(r.tool), num(r.total_tokens), num(r.input_tokens),
-      num(r.output_tokens), num(r.reasoning_tokens), num(r.cache_read_tokens),
-      num(r.cache_write_tokens), num(r.interactions),
+    return [txt(toolShort(r.tool)), tok(r.total_tokens), tok(r.input_tokens),
+      tok(r.output_tokens), tok(r.reasoning_tokens), tok(r.cache_read_tokens),
+      tok(r.cache_write_tokens), cnt(r.interactions),
       "<td class=\"num\">" + pct(r.cache_hit_ratio) + "</td>"];
   }, 9);
 }
@@ -669,16 +674,19 @@ function toolByModel(rows) {
 
 function renderModelTable(rows, toolOf) {
   qs("#modelTable tbody").innerHTML = tableRows(rows, function (r) {
-    return [txt(r.model), "<td>" + esc((toolOf[r.model] || []).join(", ")) + "</td>",
-      num(r.total_tokens), num(r.cache_read_tokens), num(r.llm_calls)];
-  }, 5);
+    var tools = (toolOf[r.model] || []).map(toolShort).join(", ");
+    return [txt(r.model), "<td>" + esc(tools) + "</td>",
+      tok(r.input_tokens), tok(r.output_tokens), tok(r.reasoning_tokens),
+      tok(r.cache_read_tokens), tok(r.total_tokens), cnt(r.llm_calls)];
+  }, 8);
 }
 
 function renderProjectTable(rows) {
   qs("#projectTable tbody").innerHTML = tableRows(rows, function (r) {
-    return [txt(r.project), num(r.total_tokens), num(r.cache_read_tokens),
-      num(r.interactions)];
-  }, 4);
+    return [txt(r.project), tok(r.input_tokens), tok(r.output_tokens),
+      tok(r.reasoning_tokens), tok(r.cache_read_tokens),
+      tok(r.total_tokens), cnt(r.interactions)];
+  }, 7);
 }
 
 function renderRecords(rows) {
@@ -836,7 +844,6 @@ async function collect() {
 // --------------------------------------------------------------------- boot
 
 async function boot() {
-  buildTimezoneOptions();
   initControls();
   syncControls();
   try {
@@ -844,8 +851,18 @@ async function boot() {
     state.knownTools = info.tools.map(function (t) { return t.key; });
     state.knownModels = info.models;
     qs("#dbPath").textContent = "数据库: " + info.db_path;
-    buildChips(qs("#toolChips"), state.knownTools, state.tools,
-                function () { load(); }, true);
+    // Explain tools that are installed but yield no records, so an empty
+    // row never looks like a bug.
+    var notes = info.tools.filter(function (x) { return x.reason; });
+    if (notes.length) {
+      qs("#toolNotes").textContent = notes.map(function (x) {
+        return x.short + ": " + x.reason;
+      }).join("  ·  ");
+    }
+    buildChips(qs("#toolChips"),
+                state.knownTools.map(function (t) { return t; }),
+                state.tools, function () { load(); }, true,
+                function (name) { return toolShort(name); });
     buildModelSelect(info.models);
   } catch (err) {
     qs("#status").textContent = "初始化失败: " + err.message;
