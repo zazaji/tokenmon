@@ -47,9 +47,6 @@ class QwenCodeCollector(BaseCollector):
                 ctx.report.scanned_files += 1
                 for record in self._parse(path, sessions, ctx):
                     yield record
-        # Remote ~/.qwen over ssh, when configured.
-        for record in self.collect_remote(ctx):
-            yield record
 
     def _usage_files(self, root):
         """Per-request usage logs, oldest month first."""
@@ -131,90 +128,4 @@ class QwenCodeCollector(BaseCollector):
                     "local_date": obj.get("localDate"),
                     "skill_calls": meta.get("skill_calls", 0),
                 },
-            )
-
-    def _remote_target(self):
-        """Optional user@host whose ~/.qwen should also be read.
-
-        QwenCode often runs on a remote development box while the dashboard
-        lives on the laptop, so an ssh target can be configured with
-        TOKENMON_QWEN_SSH.  Only the two accounting files are read, never a
-        whole directory listing, and nothing is written back.
-        """
-        import os
-
-        return (os.environ.get("TOKENMON_QWEN_SSH") or "").strip()
-
-    def collect_remote(self, ctx):
-        """Yield records from a remote ~/.qwen over ssh (optional)."""
-        target = self._remote_target()
-        if not target:
-            return
-        import json
-        import shutil
-        import subprocess
-
-        if not shutil.which("ssh"):
-            ctx.report.warn("TOKENMON_QWEN_SSH set but no ssh client available")
-            return
-        remote = (
-            "for f in ~/.qwen/usage/token-usage-*.jsonl; do "
-            "[ -f \"$f\" ] && echo \"#FILE $f\" && cat \"$f\"; done; "
-            "if [ -f ~/.qwen/usage_record.jsonl ]; then "
-            "echo \"#FILE ~/.qwen/usage_record.jsonl\" && cat ~/.qwen/usage_record.jsonl; fi"
-        )
-        try:
-            proc = subprocess.run(
-                ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
-                 target, remote],
-                capture_output=True, text=True, timeout=120, check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            ctx.report.warn("ssh to " + target + " failed: " + str(exc))
-            return
-        if proc.returncode != 0:
-            ctx.report.warn("ssh to " + target + " returned " + str(proc.returncode))
-            return
-        sessions = {}
-        for line in proc.stdout.splitlines():
-            if line.startswith("#FILE "):
-                continue
-            try:
-                obj = json.loads(line)
-            except (TypeError, ValueError):
-                continue
-            session_id = str(obj.get("sessionId") or "")
-            if "models" in obj and session_id:
-                tools = obj.get("tools")
-                sessions[session_id] = {
-                    "project": project_from_cwd(str(obj.get("project") or "")),
-                    "tool_calls": int(tools.get("totalCalls") or 0)
-                    if isinstance(tools, dict) else 0,
-                    "skill_calls": 0,
-                }
-                continue
-            total = int(obj.get("totalTokens") or 0)
-            if not total and not (obj.get("inputTokens") or obj.get("outputTokens")):
-                continue
-            meta = sessions.get(session_id, {})
-            model = str(obj.get("model") or "unknown")
-            ctx.report.parsed_records += 1
-            yield UsageRecord(
-                tool=self.tool,
-                record_key=str(obj.get("id") or (session_id + str(obj.get("timestamp")))),
-                ts=obj.get("timestamp"),
-                model=model,
-                provider=str(obj.get("authType") or ""),
-                session_id=session_id,
-                project=meta.get("project", ""),
-                input_tokens=int(obj.get("inputTokens") or 0),
-                output_tokens=int(obj.get("outputTokens") or 0),
-                reasoning_tokens=int(obj.get("thoughtsTokens") or 0),
-                cache_read_tokens=int(obj.get("cachedTokens") or 0),
-                total_tokens=total,
-                llm_calls=1,
-                tool_calls=meta.get("tool_calls", 0),
-                is_interaction=0,
-                source_path="ssh://" + target + "/.qwen",
-                metadata={"source": obj.get("source"), "remote": target},
             )

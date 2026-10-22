@@ -53,7 +53,7 @@ def test_expand_user_and_vars(monkeypatch, tmp_path):
 def test_resolve_all_covers_every_tool():
     resolved = P.resolve_all()
     assert set(resolved) == set(P.TOOL_ORDER)
-    assert len(P.TOOL_ORDER) == 6
+    assert len(P.TOOL_ORDER) == 7
 
 
 def test_extra_homes_detects_sessions_subdir(monkeypatch, tmp_path):

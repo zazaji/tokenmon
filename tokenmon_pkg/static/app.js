@@ -46,9 +46,8 @@ var TOOL_SHORT = {
   zcode: "ZCode",
   opencode: "OC",
   "deepseek-harness": "DSH",
-  antigravity: "AGY",
   qwencode: "Qwen",
-  cursor: "Cursor"
+  workbuddy: "WB"
 };
 
 function toolShort(name) {

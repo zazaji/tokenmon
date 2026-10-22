@@ -13,7 +13,8 @@
 | `zcode` | ZCode CLI | `~/.zcode/cli/db/db.sqlite` 的 `model_usage` 表 |
 | `opencode` | opencode | `~/.local/share/opencode/opencode.db`（Windows: `%APPDATA%\opencode`） |
 | `deepseek-harness` | DeepSeek Harness | `~/.dsh/sessions/*/session-*/session.v4.jsonl[.zstd]` |
-| `qwencode` | QwenCode CLI | `~/.qwen/usage/token-usage-*.jsonl` + `usage_record.jsonl`，可选经 SSH 读远端 |
+| `qwencode` | QwenCode CLI | `~/.qwen/usage/token-usage-*.jsonl` + `usage_record.jsonl` |
+| `workbuddy` | WorkBuddy | `~/.workbuddy/workbuddy.db` 的 `session_usage`（仅上下文占用量） |
 
 ## 快速开始
 
@@ -157,17 +158,6 @@ ssh zazaji@10.10.10.75 "systemctl --user daemon-reload && \
 
 > **端口说明**：8770 是本项目统一端口。远端 8765 已被 AgentNode 占用，
 > 因此部署时显式指定 8770；本机默认值也已改为 8770。
-
-### 采集远端 QwenCode
-
-QwenCode 常跑在开发机上，而面板在笔记本上。给采集器一个 ssh 目标即可：
-
-```bash
-TOKENMON_QWEN_SSH=zazaji@10.10.10.75 python tokenmon.py collect --tools qwencode
-```
-
-只读取远端 `~/.qwen/usage/token-usage-*.jsonl` 与 `~/.qwen/usage_record.jsonl`，
-不回传其他内容，也不写入远端。
 
 ## Web API
 

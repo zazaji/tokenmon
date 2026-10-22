@@ -226,7 +226,7 @@ def test_generic_missing_directory_is_silent(tmp_path):
 def test_registry_has_all_tools():
     assert set(REGISTRY) == {
         "codex", "claudecode", "zcode", "opencode", "deepseek-harness",
-        "qwencode"}
+        "qwencode", "workbuddy"}
 
 
 def test_collect_all_tools_without_error(all_homes):

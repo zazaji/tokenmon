@@ -18,6 +18,7 @@ from .codex import CodexCollector
 from .deepseek_harness import DeepSeekHarnessCollector
 from .opencode import OpenCodeCollector
 from .qwencode import QwenCodeCollector
+from .workbuddy import WorkBuddyCollector
 from .zcode import ZCodeCollector
 
 REGISTRY = {
@@ -27,6 +28,7 @@ REGISTRY = {
     "opencode": OpenCodeCollector(),
     "deepseek-harness": DeepSeekHarnessCollector(),
     "qwencode": QwenCodeCollector(),
+    "workbuddy": WorkBuddyCollector(),
 }
 
 TOOL_ORDER = list(P.TOOL_ORDER)
@@ -38,6 +40,7 @@ DISPLAY_NAMES = {
     "opencode": "opencode",
     "deepseek-harness": "DeepSeek Harness",
     "qwencode": "QwenCode",
+    "workbuddy": "WorkBuddy",
 }
 
 
@@ -49,6 +52,7 @@ SHORT_NAMES = {
     "opencode": "OC",
     "deepseek-harness": "DSH",
     "qwencode": "Qwen",
+    "workbuddy": "WB",
 }
 
 

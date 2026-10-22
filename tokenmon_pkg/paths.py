@@ -249,6 +249,27 @@ def qwencode_paths() -> ToolPaths:
         ]
     return _first_existing(candidates, "qwencode", notes)
 
+def workbuddy_paths() -> ToolPaths:
+    """WorkBuddy (Tencent desktop AI assistant).
+
+    Layout (macOS): `~/.workbuddy` holding `workbuddy.db`, whose
+    `session_usage` table records context-window usage per session.
+    Windows/Linux fall back to the app-support / XDG locations.
+    """
+    notes = ["reads ~/.workbuddy/workbuddy.db (session context usage)"]
+    override = _env_dir("TOKENMON_WORKBUDDY_HOME")
+    if override:
+        return _first_existing([override], "workbuddy", notes)
+    if IS_WINDOWS:
+        candidates = [_appdata("WorkBuddy"), home() / ".workbuddy"]
+    elif IS_MACOS:
+        candidates = [home() / ".workbuddy", macos_app_support("WorkBuddy")]
+    else:
+        candidates = [home() / ".workbuddy", xdg_config("WorkBuddy"),
+                      xdg_data("WorkBuddy")]
+    return _first_existing(candidates, "workbuddy", notes)
+
+
 RESOLVERS = {
     "codex": codex_paths,
     "claudecode": claudecode_paths,
@@ -256,6 +277,7 @@ RESOLVERS = {
     "opencode": opencode_paths,
     "deepseek-harness": deepseek_harness_paths,
     "qwencode": qwencode_paths,
+    "workbuddy": workbuddy_paths,
 }
 
 #: Canonical tool order used by the CLI, the web UI and the collectors.
@@ -266,6 +288,7 @@ TOOL_ORDER = [
     "opencode",
     "deepseek-harness",
     "qwencode",
+    "workbuddy",
 ]
 
 

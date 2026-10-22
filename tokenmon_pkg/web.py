@@ -205,7 +205,7 @@ def create_app(db_path: str | None = None) -> Flask:
         reasons = {
             "cursor": "未安装：未找到 Cursor 数据目录",
             "qwencode": "未安装：未找到 QwenCode 数据目录",
-            "antigravity": "已安装但本地账本不含 token 数量（protobuf 仅存模型名）",
+            "workbuddy": "本地仅有上下文占用量，无请求级 token 分配",
         }
         return jsonify({
             "tools": [
