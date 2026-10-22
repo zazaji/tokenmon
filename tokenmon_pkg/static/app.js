@@ -347,24 +347,34 @@ function renderLineChart(buckets) {
   }
 
   var width = Math.max(560, host.clientWidth || 860);
-  var height = 300;
-  var pad = { top: 20, right: 20, bottom: 30, left: 62 };
+  var height = 320;
+  var pad = { top: 22, right: 18, bottom: 32, left: 62 };
   var plotW = width - pad.left - pad.right;
   var plotH = height - pad.top - pad.bottom;
 
-  // One scale shared by every line in the group so the comparison is
-  // honest.  Interaction counts are tiny next to token totals, so groups
-  // that mix them are not offered.
-  var all = [];
-  group.lines.forEach(function (line) {
-    buckets.forEach(function (b) { all.push(Number(b[line.key]) || 0); });
+  // One shared scale across every line of the group so the stacked bars
+  // are comparable.  For the composition view the stack total is what
+  // the y axis measures, so the axis is derived from the sums.
+  var stacked = group.lines.length > 1;
+  var totals = buckets.map(function (b) {
+    if (!stacked) return Number(b[group.lines[0].key]) || 0;
+    return group.lines.reduce(function (sum, line) {
+      return sum + (Number(b[line.key]) || 0);
+    }, 0);
   });
-  var max = Math.max.apply(null, all.concat([0]));
+  var max = Math.max.apply(null, totals.concat([0]));
   var top = max === 0 ? 1 : max * 1.16;
-  var stepX = buckets.length > 1 ? plotW / (buckets.length - 1) : 0;
 
-  function xAt(i) { return pad.left + stepX * i; }
+  function xAt(i) {
+    var slot = plotW / buckets.length;
+    return pad.left + slot * i + slot / 2;
+  }
+  function slotW() { return plotW / buckets.length; }
   function yAt(v) { return pad.top + plotH - (v / top) * plotH; }
+
+  // Bars get thin when there are many buckets; keep a readable gap.
+  var barW = Math.max(2, Math.min(34, slotW() * 0.66));
+  var radius = Math.min(3, barW / 3);
 
   var parts = [];
   parts.push("<svg viewBox=\"0 0 " + width + " " + height + "\" role=\"img\">");
@@ -385,43 +395,50 @@ function renderLineChart(buckets) {
   buckets.forEach(function (b, i) {
     if (i % every !== 0 && i !== buckets.length - 1) return;
     parts.push("<text class=\"axis-label\" x=\"" + xAt(i).toFixed(1) + "\" y=\""
-               + (height - 10) + "\" text-anchor=\"middle\">" + esc(shortLabel(b.label)) + "</text>");
+               + (height - 11) + "\" text-anchor=\"middle\">" + esc(shortLabel(b.label)) + "</text>");
   });
 
-  // One smooth curve per series.  No area fill: on a dark background the
-  // stacked fills hide each other, while bare lines stay readable.
-  var legend = [];
-  var peakAll = 0;
-  group.lines.forEach(function (line) {
-    var values = buckets.map(function (b) { return Number(b[line.key]) || 0; });
-    var points = values.map(function (v, i) { return [xAt(i), yAt(v)]; });
-    var d = splinePath(points);
-    if (!d) return;
-    parts.push("<path class=\"series-path\" d=\"" + d + "\" stroke=\"" + line.color
-               + "\" fill=\"none\" stroke-linejoin=\"round\" stroke-linecap=\"round\"/>");
-    // mark the peak of this line
-    var peakIndex = 0;
-    values.forEach(function (v, i) { if (v > values[peakIndex]) peakIndex = i; });
-    if (values[peakIndex] > 0) {
-      peakAll = Math.max(peakAll, values[peakIndex]);
-      parts.push("<circle class=\"dot peak\" cx=\"" + xAt(peakIndex).toFixed(1)
-                 + "\" cy=\"" + yAt(values[peakIndex]).toFixed(1) + "\" r=\"3.6\" fill=\""
-                 + line.color + "\"/>");
+  // Stacked bars.  Each bar is a rounded top segment per series so the
+  // composition reads from the bottom up, matching the legend order.
+  var peakIndex = 0;
+  totals.forEach(function (v, i) { if (v > totals[peakIndex]) peakIndex = i; });
+
+  buckets.forEach(function (bucket, i) {
+    var cx = xAt(i);
+    var x0 = cx - barW / 2;
+    if (stacked) {
+      var acc = 0;
+      group.lines.forEach(function (line, li) {
+        var v = Number(bucket[line.key]) || 0;
+        if (v <= 0) return;
+        var yTop = yAt(acc + v);
+        var yBottom = yAt(acc);
+        var h = Math.max(0.6, yBottom - yTop);
+        var isTop = li === group.lines.length - 1;
+        // Only the topmost visible segment gets rounded corners.
+        var r = isTop ? Math.min(radius, h / 2) : 0;
+        var d = barPath(x0, yTop, barW, h, r);
+        parts.push("<path class=\"bar-seg\" d=\"" + d + "\" fill=\"" + line.color
+                   + "\" data-line=\"" + esc(line.key) + "\"/>");
+        acc += v;
+      });
+    } else {
+      var single = group.lines[0];
+      var sv = Number(bucket[single.key]) || 0;
+      var sy = yAt(sv);
+      var sh = Math.max(0.6, yAt(0) - sy);
+      var sr = Math.min(radius, sh / 2);
+      parts.push("<path class=\"bar-seg\" d=\"" + barPath(x0, sy, barW, sh, sr)
+                 + "\" fill=\"" + single.color + "\"/>");
     }
-    legend.push({ label: line.label, color: line.color });
   });
 
-  // inline series labels at the right edge so the reader does not have to
-  // look up and down between legend and chart
-  group.lines.forEach(function (line, index) {
-    var values = buckets.map(function (b) { return Number(b[line.key]) || 0; });
-    if (!values.length) return;
-    var last = values[values.length - 1];
-    var y = yAt(last) + index * 13 - (group.lines.length - 1) * 6.5;
-    parts.push("<text class=\"series-label\" x=\"" + (width - pad.right + 4)
-               + "\" y=\"" + y.toFixed(1) + "\" fill=\"" + line.color + "\">"
-               + esc(line.label) + "</text>");
-  });
+  // Peak value label above the tallest bar.
+  if (totals[peakIndex] > 0) {
+    parts.push("<text class=\"peak-label\" x=\"" + xAt(peakIndex).toFixed(1)
+               + "\" y=\"" + (yAt(totals[peakIndex]) - 8).toFixed(1)
+               + "\" text-anchor=\"middle\">" + esc(fmt(totals[peakIndex])) + "</text>");
+  }
 
   parts.push("<line class=\"hover-line\" id=\"hoverLine\" x1=\"0\" y1=\"" + pad.top
              + "\" x2=\"0\" y2=\"" + (pad.top + plotH) + "\" style=\"display:none\"/>");
@@ -429,10 +446,29 @@ function renderLineChart(buckets) {
   parts.push("<div class=\"linechart-tip\" id=\"chartTip\"></div>");
   host.innerHTML = parts.join("");
 
-  qs("#chartHint").textContent = group.label + " \u00b7 \u5171 " + buckets.length
-    + " \u4e2a\u65f6\u95f4\u6876 \u00b7 \u5cf0\u503c " + fmt(peakAll);
+  qs("#chartHint").textContent = group.label + " · 共 " + buckets.length
+    + " 个时间桶 · 峰值 " + fmt(max);
 
   attachChartHover(host, buckets, group, xAt, width);
+}
+
+// Rounded-top rectangle as an SVG path so stacked segments can round only
+// the segment that closes the stack.
+function barPath(x, y, w, h, r) {
+  if (h <= 0) return "";
+  var rr = Math.min(r, w / 2, h);
+  if (rr <= 0.5) {
+    return "M" + x.toFixed(2) + " " + y.toFixed(2)
+      + "h" + w.toFixed(2) + "v" + h.toFixed(2) + "h" + (-w).toFixed(2) + "Z";
+  }
+  return "M" + (x + rr).toFixed(2) + " " + y.toFixed(2)
+    + "h" + (w - rr * 2).toFixed(2)
+    + "a" + rr.toFixed(2) + " " + rr.toFixed(2) + " 0 0 1 " + rr.toFixed(2) + " " + rr.toFixed(2)
+    + "v" + (h - rr).toFixed(2)
+    + "h" + (-w).toFixed(2)
+    + "v" + (-(h - rr)).toFixed(2)
+    + "a" + rr.toFixed(2) + " " + rr.toFixed(2) + " 0 0 1 " + rr.toFixed(2) + " " + (-rr).toFixed(2)
+    + "Z";
 }
 // Metric toolbar: builds once, then just reflects the active group.
 function renderMetricToolbar(group) {
@@ -484,8 +520,16 @@ function attachChartHover(host, buckets, group, xAt, width) {
       var d = Math.abs(xAt(i) - relX);
       if (d < bestDist) { bestDist = d; best = i; }
     });
+    // Highlight the hovered column.
+    Array.prototype.forEach.call(host.querySelectorAll(".bar-seg"), function (seg) {
+      seg.style.opacity = "";
+    });
     var bucket = buckets[best];
     if (!bucket) return;
+    Array.prototype.forEach.call(host.querySelectorAll(".bar-seg"), function (seg, index) {
+      var owner = Math.floor(index / Math.max(1, group.lines.length));
+      seg.style.opacity = owner === best ? "1" : "0.42";
+    });
     if (hoverLine) {
       hoverLine.setAttribute("x1", String(xAt(best)));
       hoverLine.setAttribute("x2", String(xAt(best)));
