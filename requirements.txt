@@ -1,0 +1,14 @@
+# Core runtime dependencies.
+#
+#   flask      - web UI and JSON API (optional: the CLI report command works
+#                without it)
+#   zstandard  - reads DeepSeek Harness .zstd session logs; when absent the
+#                collector falls back to the system zstd binary, and if
+#                neither is available that source is reported as skipped
+#                instead of failing the run
+#
+flask>=3.0
+zstandard>=0.22
+
+# Development only:
+#   pytest>=8.0

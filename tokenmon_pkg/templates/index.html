@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tokenmon - AI 编程工具 Token 用量分析</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">TM</span>
+    <div>
+      <h1>tokenmon</h1>
+      <p class="sub">AI 编程工具 Token 用量统计分析</p>
+    </div>
+  </div>
+  <div class="actions">
+    <button id="refresh" class="btn" type="button">刷新</button>
+    <button id="collect" class="btn primary" type="button">重新采集</button>
+    <a class="btn" id="export" href="/api/export.csv">导出 CSV</a>
+  </div>
+</header>
+
+<section class="filters">
+  <div class="group">
+    <label>统计周期</label>
+    <div class="segmented" id="period">
+      <button type="button" data-value="day" class="active">日</button>
+      <button type="button" data-value="week">周</button>
+      <button type="button" data-value="month">月</button>
+    </div>
+  </div>
+  <div class="group">
+    <label>回溯范围</label>
+    <select id="span">
+      <option value="1">最近 1 个周期</option>
+      <option value="7">最近 7 个周期</option>
+      <option value="14">最近 14 个周期</option>
+      <option value="30">最近 30 个周期</option>
+      <option value="90">最近 90 个周期</option>
+    </select>
+  </div>
+  <div class="group">
+    <label>时区</label>
+    <select id="tz"><option value="">本地时区</option></select>
+  </div>
+  <div class="group grow">
+    <label>工具筛选</label>
+    <div class="chips" id="toolChips"></div>
+  </div>
+  <div class="group grow">
+    <label>模型筛选</label>
+    <div class="chips" id="modelChips"></div>
+  </div>
+</section>
+
+<section class="kpis" id="kpis"></section>
+
+<section class="grid">
+  <div class="card">
+    <div class="card-head">
+      <h2>账户余额与额度</h2>
+      <a class="btn" href="/api/export-accounts.csv">导出 CSV</a>
+    </div>
+    <table class="table" id="accountTable"><thead><tr>
+      <th>工具</th><th>类型</th><th>账户</th><th class="num">余额 / 已用</th>
+      <th class="num">剩余</th><th>重置时间</th><th>套餐</th>
+    </tr></thead><tbody></tbody></table>
+    <p class="hint" id="accountHint"></p>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>已花费金额</h2></div>
+    <table class="table" id="costTable"><thead><tr>
+      <th>工具</th><th class="num">金额</th><th class="num">会话数</th>
+      <th class="num">记录数</th>
+    </tr></thead><tbody></tbody></table>
+    <p class="hint" id="costHint"></p>
+  </div>
+</section>
+
+<section class="grid">
+  <div class="card wide">
+    <div class="card-head">
+      <h2>Token 趋势</h2>
+      <div class="legend" id="seriesLegend"></div>
+    </div>
+    <div class="chart" id="chart"></div>
+    <p class="hint" id="chartHint"></p>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>按工具</h2></div>
+    <table class="table" id="toolTable"><thead><tr>
+      <th>工具</th><th class="num">总 Token</th><th class="num">输入</th>
+      <th class="num">输出</th><th class="num">推理</th>
+      <th class="num">缓存命中</th><th class="num">缓存写入</th>
+      <th class="num">交互次数</th><th class="num">命中率</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>按模型</h2></div>
+    <table class="table" id="modelTable"><thead><tr>
+      <th>模型</th><th>工具</th><th class="num">总 Token</th>
+      <th class="num">缓存命中</th><th class="num">调用次数</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+  <div class="card">
+    <div class="card-head"><h2>按项目</h2></div>
+    <table class="table" id="projectTable"><thead><tr>
+      <th>项目</th><th class="num">总 Token</th><th class="num">缓存命中</th>
+      <th class="num">交互次数</th>
+    </tr></thead><tbody></tbody></table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>最近明细</h2><span class="hint" id="recordHint"></span></div>
+  <table class="table" id="recordTable"><thead><tr>
+    <th>时间</th><th>工具</th><th>模型</th><th>项目</th>
+    <th class="num">输入</th><th class="num">输出</th><th class="num">推理</th>
+    <th class="num">缓存命中</th><th class="num">缓存写入</th><th class="num">合计</th>
+  </tr></thead><tbody></tbody></table>
+</section>
+
+<footer class="footer">
+  <span id="dbPath"></span>
+  <span id="status"></span>
+</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

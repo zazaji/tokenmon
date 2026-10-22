@@ -1,0 +1,75 @@
+{
+  "id": "tokenmon-core",
+  "cwd": "/Users/ou/project/pc_project/tokenmon",
+  "objective": "实现 tokenmon 核心数据层：跨平台数据源发现、统一用量记录模型、SQLite 增量入库、8 个 AI 编程工具的采集器（codex / claudecode / zcode / opencode / deepseek-harness / antigravity / qwencode / cursor），以及 CLI collect 子命令与解析器单测。",
+  "scope": [
+    "tokenmon_pkg/__init__.py",
+    "tokenmon_pkg/paths.py",
+    "tokenmon_pkg/model.py",
+    "tokenmon_pkg/store.py",
+    "tokenmon_pkg/collectors/__init__.py",
+    "tokenmon_pkg/collectors/base.py",
+    "tokenmon_pkg/collectors/codex.py",
+    "tokenmon_pkg/collectors/claudecode.py",
+    "tokenmon_pkg/collectors/zcode.py",
+    "tokenmon_pkg/collectors/opencode.py",
+    "tokenmon_pkg/collectors/deepseek_harness.py",
+    "tokenmon_pkg/collectors/antigravity.py",
+    "tokenmon_pkg/collectors/qwencode.py",
+    "tokenmon_pkg/collectors/cursor.py",
+    "tokenmon.py",
+    "requirements.txt",
+    "tests/test_paths.py",
+    "tests/test_parsers.py",
+    "tests/test_store.py",
+    "tests/fixtures/"
+  ],
+  "constraints": [
+    "Python >= 3.10，仅标准库 + flask（flask 只允许在后续 web 合同使用，本合同不 import flask）+ zstandard（可选依赖，缺失时降级并在结果中记录 warning，不得崩溃）。",
+    "跨平台：Windows/macOS/Linux。用 os.path.expanduser、platform.system()、%APPDATA% 等解析各工具默认数据目录；不得硬编码 /Users 或 macOS 专属路径作为唯一路径；所有路径必须可被环境变量或参数覆盖。",
+    "解析必须容错：单行/单文件解析失败只记录 warning 并跳过，不得中断整个采集；大文件必须流式逐行读取，不得一次性 read() 超过 50MB 的文件。",
+    "SQLite 写入必须幂等可重跑：同一条记录重复导入不得产生重复行（用稳定的 record_key 唯一索引 + INSERT OR IGNORE）。",
+    "不得修改本项目之外的文件；不得读取或输出任何凭据/token/账号内容（只取聚合字段）。",
+    "所有新增测试必须通过 pytest 运行；测试用合成 fixture，不得依赖本机真实用户数据。",
+    "代码风格：类型注解 + docstring，公开函数有清晰签名；文件保持 < 400 行。"
+  ],
+  "acceptance": [
+    "8 个工具都有注册的采集器，collectors/__init__.py 暴露 REGISTRY（key -> collector 实例）与 TOOL_ORDER。",
+    "统一 UsageRecord 至少包含字段：tool, record_key, ts(UTC datetime), model, provider, session_id, project, input_tokens, output_tokens, reasoning_tokens, cache_read_tokens, cache_write_tokens, total_tokens, is_interaction(0/1), llm_calls, tool_calls, status, source_path, metadata_json。",
+    "缓存命中口径统一：cache_read_tokens 表示缓存命中（读取）token；cache_write_tokens 表示缓存写入 token；total_tokens = input_tokens + output_tokens + reasoning_tokens + cache_read_tokens + cache_write_tokens（当 provider 未提供 total 时按此计算，provider 提供时以 provider 为准并保留在 metadata）。",
+    "codex 采集器：扫描 <codex_home>/sessions/**/rollout-*.jsonl 与 archived_sessions/rollout-*.jsonl，以及 account_* 子 home；只统计 event_msg.payload.type=='token_count' 的 last_token_usage（绝不能用 cumulative total_token_usage，否则重复计数）；model 取最近一次 turn_context.payload.model，回退 session_meta.payload.model_provider；interaction = 该 turn 的 user 消息数（以 turn_context/task_started 的 turn_id 关联，无法关联时记为 0）。",
+    "claudecode 采集器：扫描 <home>/.claude/projects/**/*.jsonl；assistant 行取 message.usage(input_tokens, output_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens_details.thinking_tokens) 与 message.model；必须按 message.id/uuid+requestId 去重（同一 assistant 消息可能重复出现）；interaction = type=='user' 且 message.content 为字符串或列表首元素 type=='text'（非 tool_result）的行；sessionId 记为 session_id；跳过 model=='<synthetic>' 或 usage 全 0 的行。",
+    "zcode 采集器：只读打开 <home>/.zcode/cli/db/db.sqlite（URI mode=ro&immutable=1），从 model_usage 表读 started_at(毫秒 epoch), model_id, variant, agent, mode, status, input_tokens, output_tokens, reasoning_tokens, cache_creation_input_tokens, cache_read_input_tokens, computed_total_tokens, tool_call_count, session_id；project 从 session 表 directory 解析（session 表缺失时留空）。",
+    "opencode 采集器：只读打开 <share>/opencode/opencode.db（Linux: ~/.local/share/opencode，macOS: ~/.local/share/opencode，Windows: %APPDATA%/opencode），读 message 表 data JSON，仅 role=='assistant' 且含 tokens 的行：tokens.input/output/reasoning/cache.read/cache.write/total, modelID, providerID, time.created, path.cwd；interaction 统计同 session 的 role=='user' 消息数。",
+    "deepseek-harness 采集器：扫描 <home>/.dsh/sessions/*/session-*/session.v4.jsonl.zstd（也兼容 .jsonl 未压缩）；zstandard 不可用时尝试系统 zstd CLI，两者都不可用时该来源记为 skipped 并 warning；记录类型：request/context 与 model/selection 给 provider/model，assistant/attempt 的 stream chunks 中 type=='usage' 的 usage.inputTokens/outputTokens/totalTokens，user/message 计 interaction，tool/call 计 tool_calls。",
+    "antigravity / qwencode / cursor 采集器：实现通用 best-effort 扫描器（共用 base 中的 helper），候选路径覆盖三平台（macOS ~/Library/Application Support/<App>、Linux ~/.config/<app> 与 ~/.local/share/<app>、Windows %APPDATA%/<App>、%LOCALAPPDATA%/<App>）；扫描该目录下的 *.jsonl / *.json / *.ndjson 与 state.vscdb(SQLite ItemTable) / workspaceStorage/*/state.vscdb，用宽松 schema 识别含 token 字段的记录（promptTokens/inputTokens/input_tokens + completionTokens/outputTokens/output_tokens，及 cachedTokens/cacheRead 等），提取 ts/model/tokens；找不到数据时返回 0 条且不报错。三个采集器各自的候选路径与识别规则必须在代码注释中写明来源假设。",
+    "store.py：建表 usage_records + 索引(tool, ts)、(tool, model, ts)、(project)、record_key UNIQUE；提供 insert_many(records) 返回 (inserted, skipped)；提供 iter_records(filters) 供分析层使用；提供 ingest_report 表或内存统计记录每个来源 scanned_files/parsed_records/errors/warnings。",
+    "tokenmon.py CLI：`python tokenmon.py collect [--db PATH] [--tools a,b] [--source-dir PATH ...] [--full]`，默认 DB 路径按平台选择（macOS ~/Library/Application Support/tokenmon/tokenmon.db，Linux ~/.local/share/tokenmon/tokenmon.db，Windows %APPDATA%/tokenmon/tokenmon.db，可用 TOKENMON_DB 覆盖）；--source-dir 可指向本地 fixture 目录用于测试；输出每个工具的扫描摘要（文件数/记录数/错误数）。",
+    "pytest 全绿：tests/test_paths.py（平台路径解析与覆盖）、tests/test_parsers.py（每个采集器用合成 fixture 至少断言 token 汇总值、interaction 数、model 名、去重生效）、tests/test_store.py（幂等插入、过滤查询、report 统计）。",
+    "运行 `python tokenmon.py collect --db /tmp/x.db --source-dir tests/fixtures` 成功且退出码 0，输出包含 8 个工具名。"
+  ],
+  "browser_acceptance": [],
+  "verify": [
+    [
+      ".venv/bin/python",
+      "-m",
+      "pytest",
+      "tests/test_paths.py",
+      "tests/test_parsers.py",
+      "tests/test_store.py",
+      "-q"
+    ],
+    [
+      ".venv/bin/python",
+      "tokenmon.py",
+      "collect",
+      "--db",
+      "/tmp/tokenmon_verify.db",
+      "--source-dir",
+      "tests/fixtures"
+    ]
+  ],
+  "verification_inputs": [
+    "tests/fixtures/"
+  ]
+}
