@@ -183,6 +183,18 @@ def create_app(db_path: str | None = None) -> Flask:
             "next_is_future": nxt > now,
         })
 
+    @app.get("/api/tool-models")
+    def api_tool_models():
+        """Models used by one tool, for the second-level model filter."""
+        tool = request.args.get("tools") or ""
+        with open_store() as store:
+            rows = store._conn.execute(
+                "SELECT DISTINCT model FROM usage_records WHERE tool = ?"
+                " AND model != '' AND model != 'unknown' ORDER BY model",
+                (tool,),
+            ).fetchall()
+        return jsonify({"tool": tool, "models": [row["model"] for row in rows]})
+
     @app.get("/api/tools")
     def api_tools():
         resolved = P.resolve_all()

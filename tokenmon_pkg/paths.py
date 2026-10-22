@@ -212,83 +212,42 @@ def deepseek_harness_paths() -> ToolPaths:
     return _first_existing([base], "deepseek-harness", notes)
 
 
-def antigravity_paths() -> ToolPaths:
-    """Antigravity (Google's VS Code fork) agent telemetry.
-
-    Assumption: Antigravity keeps its agent chat state in the standard VS Code
-    user-data dir.  Candidates therefore cover the VS Code layout on all three
-    platforms, both the \"\"\"Antigravity\"\"\" and \"\"\"Antigravity IDE\"\"\" product names
-    and the \"\"\".antigravity\"\"\" dot dir used for extensions.
-    """
-    notes = ["vscdb/state.vscdb + workspaceStorage are scanned for token fields"]
-    override = _env_dir("TOKENMON_ANTIGRAVITY_HOME")
-    if override:
-        return _first_existing([override], "antigravity", notes)
-    if IS_MACOS:
-        candidates = [
-            macos_app_support("Antigravity"),
-            macos_app_support("Antigravity IDE"),
-            home() / ".antigravity",
-        ]
-    elif IS_WINDOWS:
-        candidates = [
-            _appdata("Antigravity"),
-            _appdata("Antigravity IDE"),
-            _localappdata("Antigravity"),
-            home() / ".antigravity",
-        ]
-    else:
-        candidates = [
-            xdg_config("Antigravity"),
-            xdg_data("Antigravity"),
-            home() / ".antigravity",
-        ]
-    return _first_existing(candidates, "antigravity", notes)
-
-
 def qwencode_paths() -> ToolPaths:
     """QwenCode CLI (Alibaba Qwen coding assistant).
 
-    Assumption: QwenCode is a fork in the Codex/Claude Code family and stores
-    JSONL session logs under a \"\"\".qwencode\"\"\" dot dir, with a Windows/macOS app
-    data fallback.
+    The CLI keeps its own accounting under ~/.qwen:
+
+        ~/.qwen/usage/token-usage-YYYY-MM.jsonl   per-request tokens
+        ~/.qwen/usage_record.jsonl                per-session rollup
+
+    Earlier layouts (a .qwencode dot dir, or an app-support folder) are still
+    probed so upgrades and forks keep working.
     """
-    notes = ["jsonl/json session logs are scanned for token fields"]
+    notes = ["reads ~/.qwen/usage/token-usage-*.jsonl plus usage_record.jsonl"]
     override = _env_dir("TOKENMON_QWENCODE_HOME")
     if override:
         return _first_existing([override], "qwencode", notes)
     if IS_WINDOWS:
-        candidates = [_appdata("QwenCode"), _localappdata("QwenCode"), home() / ".qwencode"]
+        candidates = [
+            home() / ".qwen",
+            _appdata("QwenCode"),
+            _localappdata("QwenCode"),
+            home() / ".qwencode",
+        ]
     elif IS_MACOS:
-        candidates = [macos_app_support("QwenCode"), home() / ".qwencode"]
+        candidates = [
+            home() / ".qwen",
+            macos_app_support("QwenCode"),
+            home() / ".qwencode",
+        ]
     else:
-        candidates = [xdg_config("qwen-code"), xdg_data("qwen-code"), home() / ".qwencode"]
+        candidates = [
+            home() / ".qwen",
+            xdg_config("qwen-code"),
+            xdg_data("qwen-code"),
+            home() / ".qwencode",
+        ]
     return _first_existing(candidates, "qwencode", notes)
-
-
-def cursor_paths() -> ToolPaths:
-    """Cursor editor agent telemetry.
-
-    Assumption: Cursor is a VS Code fork, so agent chat history is expected in
-    \"\"\"globalStorage\"\"\" / \"\"\"workspaceStorage\"\"\" (SQLite \"\"\"*.vscdb\"\"\") of its user
-    data dir, plus the \"\"\".cursor\"\"\" dot dir used for CLI logs.
-    """
-    notes = ["vscdb/state.vscdb + workspaceStorage are scanned for token fields"]
-    override = _env_dir("TOKENMON_CURSOR_HOME")
-    if override:
-        return _first_existing([override], "cursor", notes)
-    if IS_MACOS:
-        candidates = [macos_app_support("Cursor"), home() / ".cursor"]
-    elif IS_WINDOWS:
-        candidates = [_appdata("Cursor"), _localappdata("Cursor"), _roaming_cursor()]
-    else:
-        candidates = [xdg_config("Cursor"), xdg_data("Cursor"), home() / ".cursor"]
-    return _first_existing(candidates, "cursor", notes)
-
-
-def _roaming_cursor() -> Path:
-    return _appdata("Cursor", "User")
-
 
 RESOLVERS = {
     "codex": codex_paths,
@@ -296,29 +255,26 @@ RESOLVERS = {
     "zcode": zcode_paths,
     "opencode": opencode_paths,
     "deepseek-harness": deepseek_harness_paths,
-    "antigravity": antigravity_paths,
     "qwencode": qwencode_paths,
-    "cursor": cursor_paths,
 }
 
+#: Canonical tool order used by the CLI, the web UI and the collectors.
 TOOL_ORDER = [
     "codex",
     "claudecode",
     "zcode",
     "opencode",
     "deepseek-harness",
-    "antigravity",
     "qwencode",
-    "cursor",
 ]
 
 
 def resolve(tool: str) -> ToolPaths:
-    """Resolve the data locations for \"\"\"tool\"\"\"."""
+    """Resolve the data locations for """ + '"""' + """tool""" + '"""' + """."""
     try:
         resolver = RESOLVERS[tool]
     except KeyError as exc:  # pragma: no cover - defensive
-        raise KeyError(f"unknown tool: {tool}") from exc
+        raise KeyError("unknown tool: " + tool) from exc
     return resolver()
 
 
@@ -341,10 +297,9 @@ def default_db_path() -> Path:
 
 
 def ensure_parent(path: Path) -> Path:
-    """Create the parent directory of \"\"\"path\"\"\" when needed."""
-    parent = path.parent
+    """Create the parent directory of """ + '"""' + """path""" + '"""' + """ when needed."""
     try:
-        parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
         pass
     return path

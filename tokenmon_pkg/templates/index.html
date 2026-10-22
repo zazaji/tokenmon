@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tokenmon - AI 编程工具 Token 用量分析</title>
-<link rel="stylesheet" href="/static/app.css?v=11">
+<link rel="stylesheet" href="/static/app.css?v=14">
 </head>
 <body>
 <header class="topbar">
@@ -52,11 +52,12 @@
   <div class="group grow wide">
     <label>工具筛选（单选）</label>
     <div class="chips" id="toolChips"></div>
+    <div class="model-row" id="modelRow" hidden>
+      <label for="modelSelect">模型</label>
+      <select id="modelSelect"><option value="">全部模型</option></select>
+    </div>
   </div>
-  <div class="group">
-    <label>模型筛选</label>
-    <select id="modelSelect"><option value="">全部模型</option></select>
-  </div>
+
 </section>
 
 <p class="hint tool-notes" id="toolNotes"></p>
@@ -67,10 +68,12 @@
   <div class="card wide">
     <div class="card-head">
       <h2>Token 趋势</h2>
-      <div class="legend" id="seriesLegend"></div>
+      <div class="chart-meta">
+        <span class="hint" id="chartHint"></span>
+        <div class="legend" id="seriesLegend"></div>
+      </div>
     </div>
     <div class="chart" id="chart"></div>
-    <p class="hint" id="chartHint"></p>
   </div>
 </section>
 
@@ -80,7 +83,7 @@
       <a class="btn" href="/api/export-accounts.csv">导出 CSV</a></div>
     <table class="table" id="accountTable"><thead><tr>
       <th>工具</th><th>类型</th><th>账户</th><th class="num">余额 / 已用</th>
-      <th class="num">剩余</th><th>重置时间</th><th>套餐</th>
+      <th class="num">剩余</th><th>重置时间</th>
     </tr></thead><tbody></tbody></table>
     <p class="hint" id="accountHint"></p>
   </div>
@@ -136,6 +139,6 @@
   <span id="status"></span>
 </footer>
 
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=14"></script>
 </body>
 </html>

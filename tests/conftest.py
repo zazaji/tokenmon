@@ -275,6 +275,39 @@ def dsh_home(tmp_path):
     return make_dsh_home(tmp_path / "dsh")
 
 
+def make_qwen_home(root):
+    """A QwenCode home in the real ~/.qwen layout."""
+    root.mkdir(parents=True, exist_ok=True)
+    usage = root / "usage"
+    usage.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"schemaVersion": 1, "id": "q1", "timestamp": "2026-10-05T09:00:00Z",
+         "localDate": "2026-10-05", "sessionId": "qs1", "model": "glm-4.6",
+         "authType": "openai", "source": "main", "inputTokens": 1000,
+         "outputTokens": 100, "cachedTokens": 500, "thoughtsTokens": 20,
+         "totalTokens": 1620, "apiDurationMs": 900},
+        {"schemaVersion": 1, "id": "q2", "timestamp": "2026-10-05T09:05:00Z",
+         "localDate": "2026-10-05", "sessionId": "qs1", "model": "glm-5.3-flash",
+         "authType": "openai", "source": "main", "inputTokens": 2000,
+         "outputTokens": 200, "cachedTokens": 1000, "thoughtsTokens": 0,
+         "totalTokens": 3200, "apiDurationMs": 1200},
+    ]
+    write_jsonl(usage / "token-usage-2026-10.jsonl", rows)
+    record = {
+        "version": 1, "sessionId": "qs1", "timestamp": 1790000000000,
+        "project": "/work/epsilon", "tools": {"totalCalls": 7},
+        "skills": {"totalCalls": 2},
+    }
+    (root / "usage_record.jsonl").write_text(
+        json.dumps(record) + chr(10), encoding="utf-8")
+    return root
+
+
+@pytest.fixture()
+def qwen_home(tmp_path):
+    return make_qwen_home(tmp_path / "qwen")
+
+
 @pytest.fixture()
 def generic_home(tmp_path):
     return make_generic_home(tmp_path / "generic")
@@ -282,12 +315,12 @@ def generic_home(tmp_path):
 
 @pytest.fixture()
 def all_homes(tmp_path, codex_home, claude_home, zcode_home, opencode_home,
-              dsh_home, generic_home):
+              dsh_home, qwen_home):
     return {
         "codex": codex_home,
         "claudecode": claude_home,
         "zcode": zcode_home,
         "opencode": opencode_home,
         "deepseek-harness": dsh_home,
-        "generic": generic_home,
+        "qwencode": qwen_home,
     }

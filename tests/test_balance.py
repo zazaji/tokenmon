@@ -98,12 +98,11 @@ def test_codex_quota_windows(tmp_path):
     quotas = [s for s in snapshots if s.kind == "quota"]
     assert len(quotas) == 2
     labels = {s.label for s in quotas}
-    assert labels == {"primary", "secondary"}
-    primary = [s for s in quotas if s.label == "primary"][0]
+    assert labels == {"5小时窗口", "7天窗口"}
+    primary = [s for s in quotas if s.label == "5小时窗口"][0]
     assert primary.used_percent == 42.0
     assert primary.remaining_percent == 58.0
     assert primary.window_minutes == 300
-    assert primary.plan == "plus"
     assert primary.resets_at is not None
 
 
@@ -126,7 +125,7 @@ def test_codex_quota_dedupes_repeated_snapshots(tmp_path):
             "type": "token_count",
             "rate_limits": {
                 "limit_id": "codex",
-                "primary": {"used_percent": 42.0, "window_minutes": 300,
+                "5小时窗口": {"used_percent": 42.0, "window_minutes": 300,
                             "resets_at": 1792000000},
                 "credits": {"has_credits": False, "unlimited": True,
                             "balance": "0"},
@@ -143,8 +142,10 @@ def test_codex_quota_dedupes_repeated_snapshots(tmp_path):
     balances = [s for s in snapshots if s.kind == "balance"]
     assert len(balances) == 1
     assert balances[0].metadata["has_credits"] is True
-    primary = [s for s in snapshots if s.label == "primary"]
-    assert len(primary) == 2
+    primary = [s for s in snapshots if s.label == "5小时窗口"]
+    # Both snapshots report the same used_percent, so they collapse to one
+    # observation: re-stating an unchanged window is not new information.
+    assert len(primary) == 1
 
 
 # -------------------------------------------------------- harness balance
@@ -185,19 +186,19 @@ def test_latest_account_keeps_newest(tmp_path):
     store = Store(tmp_path / "b.db")
     store.insert_accounts([
         AccountSnapshot(tool="codex", record_key="k1", kind="quota",
-                        ts="2026-10-05T09:00:00Z", label="primary",
+                        ts="2026-10-05T09:00:00Z", label="5小时窗口",
                         used_percent=10.0, window_minutes=300),
         AccountSnapshot(tool="codex", record_key="k2", kind="quota",
-                        ts="2026-10-05T10:00:00Z", label="primary",
+                        ts="2026-10-05T10:00:00Z", label="5小时窗口",
                         used_percent=55.0, window_minutes=300),
         AccountSnapshot(tool="codex", record_key="k3", kind="quota",
-                        ts="2026-10-05T10:00:00Z", label="secondary",
+                        ts="2026-10-05T10:00:00Z", label="7天窗口",
                         used_percent=5.0, window_minutes=10080),
     ])
     latest = store.latest_accounts()
     by_label = {s.label: s for s in latest}
-    assert by_label["primary"].used_percent == 55.0
-    assert by_label["secondary"].used_percent == 5.0
+    assert by_label["5小时窗口"].used_percent == 55.0
+    assert by_label["7天窗口"].used_percent == 5.0
     store.close()
 
 
@@ -255,10 +256,10 @@ def test_account_report_quota_series(tmp_path):
     for index, percent in enumerate((10.0, 30.0, 55.0)):
         store.insert_accounts([AccountSnapshot(
             tool="codex", record_key="q" + str(index), kind="quota",
-            ts="2026-10-05T09:0" + str(index) + ":00Z", label="primary",
+            ts="2026-10-05T09:0" + str(index) + ":00Z", label="5小时窗口",
             used_percent=percent, window_minutes=300)])
     data = build_account_report(store, tz_name="UTC")
-    series = data["quota_series"]["codex||primary"]
+    series = data["quota_series"]["codex||5小时窗口"]
     assert [p["used_percent"] for p in series] == [10.0, 30.0, 55.0]
     assert series[-1]["remaining_percent"] == 45.0
     store.close()

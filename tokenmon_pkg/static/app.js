@@ -218,6 +218,32 @@ function buildChips(container, values, selected, onChange, single, labelOf) {
   });
 }
 
+// Model is a second level under the tool: picking a tool loads only the
+// models that tool actually used, and clearing the tool hides the control
+// entirely so the filter row never offers a meaningless choice.
+function onToolChange() {
+  var row = qs("#modelRow");
+  var tool = state.tools[0] || "";
+  if (!tool) {
+    if (row) row.hidden = true;
+    state.models = [];
+    load();
+    return;
+  }
+  if (row) row.hidden = false;
+  var query = "?tools=" + encodeURIComponent(tool);
+  getJSON("/api/tool-models" + query).then(function (data) {
+    state.models = state.models.filter(function (m) {
+      return data.models.indexOf(m) >= 0;
+    }).slice(0, 1);
+    buildModelSelect(data.models);
+    load();
+  }).catch(function (err) {
+    qs("#status").textContent = "加载模型失败: " + err.message;
+    load();
+  });
+}
+
 // Model filter is a dropdown: one model at a time keeps the query simple and
 // the list short even with dozens of models across five tools.
 function buildModelSelect(models) {
@@ -728,9 +754,8 @@ function renderAccounts(accounts) {
         + "</td>"
       : "<td>-</td>";
     return [txt(r.tool), txt(r.kind_label || r.kind),
-      txt(r.label || r.account || "-"), valueCell, remainingCell, reset,
-      txt(r.plan || "-")];
-  }, 7);
+      txt(r.label || r.account || "-"), valueCell, remainingCell, reset];
+  }, 6);
 
   var costRows = (accounts && accounts.cost_summary) || [];
   qs("#costTable tbody").innerHTML = tableRows(costRows, function (r) {
@@ -861,8 +886,9 @@ async function boot() {
     }
     buildChips(qs("#toolChips"),
                 state.knownTools.map(function (t) { return t; }),
-                state.tools, function () { load(); }, true,
+                state.tools, function () { onToolChange(); }, true,
                 function (name) { return toolShort(name); });
+    onToolChange();
     buildModelSelect(info.models);
   } catch (err) {
     qs("#status").textContent = "初始化失败: " + err.message;

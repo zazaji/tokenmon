@@ -45,6 +45,24 @@ from .base import (
 )
 
 
+#: Human labels for the two Codex rate-limit windows.  "Primary" is the
+#: short rolling window and "secondary" the weekly one; showing the length
+#: makes the differing percentages obvious instead of looking like two
+#: accounts with inconsistent balances.
+def _window_label(name, minutes):
+    try:
+        mins = int(minutes)
+    except (TypeError, ValueError):
+        return name
+    if mins >= 10080:
+        return "7天窗口"
+    if mins >= 1440:
+        return str(mins // 1440) + "天窗口"
+    if mins >= 60:
+        return str(mins // 60) + "小时窗口"
+    return str(mins) + "分钟窗口"
+
+
 def _money(value):
     """Parse a provider amount that may be a string or number."""
     if value is None or isinstance(value, bool):
@@ -119,11 +137,10 @@ class CodexQuotaCollector(BaseCollector):
                     kind="quota",
                     ts=ts,
                     account=str(limits.get("limit_id") or "codex"),
-                    label=window_name,
+                    label=_window_label(window_name, minutes),
                     used_percent=float(used),
                     window_minutes=int(minutes) if minutes else None,
                     resets_at=resets_at,
-                    plan=plan,
                     source_path=str(path),
                     metadata={"unlimited": unlimited},
                 )
@@ -142,7 +159,6 @@ class CodexQuotaCollector(BaseCollector):
                         currency="USD",
                         amount=balance,
                         raw_amount=balance,
-                        plan=plan,
                         source_path=str(path),
                         metadata={"has_credits": bool(
                             credits.get("has_credits")) if isinstance(credits, dict) else False},

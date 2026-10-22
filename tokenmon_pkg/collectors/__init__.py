@@ -16,8 +16,8 @@ from .base import BaseCollector
 from .claudecode import ClaudeCodeCollector
 from .codex import CodexCollector
 from .deepseek_harness import DeepSeekHarnessCollector
-from .generic import GenericCollector
 from .opencode import OpenCodeCollector
+from .qwencode import QwenCodeCollector
 from .zcode import ZCodeCollector
 
 REGISTRY = {
@@ -26,21 +26,7 @@ REGISTRY = {
     "zcode": ZCodeCollector(),
     "opencode": OpenCodeCollector(),
     "deepseek-harness": DeepSeekHarnessCollector(),
-    "antigravity": GenericCollector(
-        "antigravity",
-        "Antigravity (VS Code based) agent telemetry",
-        P.antigravity_paths,
-    ),
-    "qwencode": GenericCollector(
-        "qwencode",
-        "QwenCode CLI session logs",
-        P.qwencode_paths,
-    ),
-    "cursor": GenericCollector(
-        "cursor",
-        "Cursor editor agent telemetry",
-        P.cursor_paths,
-    ),
+    "qwencode": QwenCodeCollector(),
 }
 
 TOOL_ORDER = list(P.TOOL_ORDER)
@@ -51,9 +37,7 @@ DISPLAY_NAMES = {
     "zcode": "ZCode",
     "opencode": "opencode",
     "deepseek-harness": "DeepSeek Harness",
-    "antigravity": "Antigravity",
     "qwencode": "QwenCode",
-    "cursor": "Cursor",
 }
 
 
@@ -64,9 +48,7 @@ SHORT_NAMES = {
     "zcode": "ZCode",
     "opencode": "OC",
     "deepseek-harness": "DSH",
-    "antigravity": "AGY",
     "qwencode": "Qwen",
-    "cursor": "Cursor",
 }
 
 

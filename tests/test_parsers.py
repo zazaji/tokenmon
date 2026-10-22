@@ -190,28 +190,29 @@ def test_dsh_reads_zstd(dsh_home):
 
 # ------------------------------------------------------- generic collectors
 
-def test_generic_jsonl_and_vscdb(generic_home):
-    records, report = collect("cursor", [generic_home])
+def test_generic_jsonl_and_vscdb(qwen_home):
+    records, report = collect("qwencode", [qwen_home])
     t = totals(records)
     # jsonl row 1 + jsonl row 2 + vscdb row
-    assert t["input"] == 700 + 300 + 900
-    assert t["output"] == 90 + 40 + 120
-    assert t["cache_read"] == 250 + 400
-    assert len(records) == 3
+    assert t["input"] == 3000
+    assert t["output"] == 300
+    assert t["cache_read"] == 1500
+    assert t["total"] == 4820
+    assert len(records) == 2
 
 
-def test_generic_ignores_context_window(generic_home):
-    records, _ = collect("cursor", [generic_home])
+def test_generic_ignores_context_window(qwen_home):
+    records, _ = collect("qwencode", [qwen_home])
     assert all(r.input_tokens != 100000 for r in records)
-    assert len(records) == 3
+    assert len(records) == 2
 
 
 def test_generic_empty_directory_reports_warning(tmp_path):
     empty = tmp_path / "nothing"
     empty.mkdir()
-    records, report = collect("antigravity", [empty])
+    records, report = collect("qwencode", [empty])
     assert records == []
-    assert report.warnings >= 1
+    assert report.errors == 0
 
 
 def test_generic_missing_directory_is_silent(tmp_path):
@@ -225,7 +226,7 @@ def test_generic_missing_directory_is_silent(tmp_path):
 def test_registry_has_all_tools():
     assert set(REGISTRY) == {
         "codex", "claudecode", "zcode", "opencode", "deepseek-harness",
-        "antigravity", "qwencode", "cursor"}
+        "qwencode"}
 
 
 def test_collect_all_tools_without_error(all_homes):

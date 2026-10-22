@@ -272,8 +272,8 @@ select {
 }
 
 /* ---- line chart polish ---- */
-.chart { min-height: 300px; }
-.linechart svg { display: block; width: 100%; height: 300px; }
+.chart { min-height: 0; }
+.linechart svg { display: block; width: 100%; height: auto; }
 .linechart .series-path {
   fill: none;
   stroke-width: 2.5;
@@ -466,8 +466,8 @@ select:hover, .range-label:hover { border-color: #3a4252; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4252; background-clip: content-box; }
 
 /* ---- stacked bar chart ---- */
-.chart { min-height: 205px; }
-.linechart svg { display: block; width: 100%; height: 205px; }
+.chart { min-height: 0; }
+.linechart svg { display: block; width: 100%; height: auto; }
 .linechart .bar-seg {
   transition: opacity .12s;
 }
@@ -521,8 +521,8 @@ select:hover, .range-label:hover { border-color: #3a4252; }
 }
 
 /* ---- line chart polish ---- */
-.chart { min-height: 300px; }
-.linechart svg { display: block; width: 100%; height: 300px; }
+.chart { min-height: 0; }
+.linechart svg { display: block; width: 100%; height: auto; }
 .linechart .series-path {
   fill: none;
   stroke-width: 2.5;
@@ -715,8 +715,8 @@ select:hover, .range-label:hover { border-color: #3a4252; }
 ::-webkit-scrollbar-thumb:hover { background: #3a4252; background-clip: content-box; }
 
 /* ---- multi-series curve chart ---- */
-.chart { min-height: 320px; }
-.linechart svg { display: block; width: 100%; height: 320px; }
+.chart { min-height: 0; }
+.linechart svg { display: block; width: 100%; height: auto; }
 .linechart .series-path {
   fill: none;
   stroke-width: 2.4;
@@ -813,3 +813,39 @@ select:hover, .range-label:hover { border-color: #3a4252; }
   line-height: 1.6;
   color: #8b93a7;
 }
+
+/* The chart svg already includes its own bottom padding, so the card does
+   not need extra space under it. */
+#chart { padding-bottom: 0; }
+#chartHint { margin-top: 4px; }
+
+/* model row nested under the tool filter */
+.model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.model-row[hidden] { display: none; }
+.model-row label {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+}
+.model-row select { min-width: 200px; }
+
+/* the chart card bottom padding is already provided by pad.bottom inside the
+   svg, so remove the card padding there and tighten the hint line */
+#chart { padding-bottom: 0; margin-bottom: -4px; }
+#chartHint { margin-top: 2px; margin-bottom: 0; }
+.card.wide:has(#chart) { padding-bottom: 10px; }
+
+.chart-meta {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.chart-meta #chartHint { margin: 0; white-space: nowrap; }
+#chart { padding-bottom: 0; margin-bottom: -4px; }
+.card.wide:has(#chart) { padding-bottom: 8px; }
