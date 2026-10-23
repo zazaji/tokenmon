@@ -131,6 +131,13 @@ def canonical_model(name: Any) -> str:
     return MODEL_ALIASES.get(text.lower(), text)
 
 
+#: Statuses that describe an observation rather than a completed model call.
+#: A row with one of these never represents a request that was sent to a
+#: model, so it must not be counted in ``llm_calls`` even when a collector
+#: leaves that field at its default.
+NON_CALL_STATUSES = frozenset({"context-snapshot"})
+
+
 def _as_int(value: Any) -> int:
     """Best effort non negative integer conversion."""
     if value is None or isinstance(value, bool):
@@ -174,7 +181,8 @@ class UsageRecord:
         self.cache_read_tokens = _as_int(self.cache_read_tokens)
         self.cache_write_tokens = _as_int(self.cache_write_tokens)
         self.tool_calls = _as_int(self.tool_calls)
-        self.llm_calls = _as_int(self.llm_calls) or 1
+        self.llm_calls = (0 if self.status in NON_CALL_STATUSES
+                          else _as_int(self.llm_calls) or 1)
         self.is_interaction = 1 if self.is_interaction else 0
         computed = (
             self.input_tokens

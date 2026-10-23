@@ -234,6 +234,7 @@ class RunReport:
                     "warnings": rep.warnings,
                     "message": rep.message,
                     "root_paths": rep.root_paths,
+                    "details": list(rep.details),
                 }
                 for name, rep in self.sources.items()
             },

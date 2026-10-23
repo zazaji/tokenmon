@@ -25,15 +25,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from tokenmon_pkg import paths as P
-from tokenmon_pkg.collectors import (
-    DISPLAY_NAMES,
-    TOOL_ORDER,
-    balance_collectors,
-    known,
-    select,
-)
-from tokenmon_pkg.collectors.base import CollectContext
-from tokenmon_pkg.store import RunReport, SourceReport, Store
+from tokenmon_pkg.cli import collect_once
+from tokenmon_pkg.collectors import DISPLAY_NAMES, TOOL_ORDER, known
+from tokenmon_pkg.store import Store
 
 args_verbose = False
 
@@ -78,95 +72,35 @@ def cmd_collect(args):
         print("sources:  " + ", ".join(str(d) for d in source_dirs))
     print("")
 
-    store = Store(db_path)
-    run_id = store.start_run(tools)
-    started = _now_ms()
-    report = RunReport(run_id=run_id, started_at=_utcnow(), tools=tools,
-                       db_path=str(db_path))
-
-    for collector in select(tools):
-        source = SourceReport(tool=collector.tool)
-        report.sources[collector.tool] = source
-        try:
-            ctx = CollectContext(roots=[], report=source, source_dirs=source_dirs)
-            batch = []
-            for record in collector.collect(ctx):
-                batch.append(record)
-                if len(batch) >= 2000:
-                    inserted, skipped = store.insert_many(batch)
-                    source.inserted += inserted
-                    source.skipped += skipped
-                    batch = []
-            if batch:
-                inserted, skipped = store.insert_many(batch)
-                source.inserted += inserted
-                source.skipped += skipped
-        except Exception as exc:
-            source.status = "error"
-            source.error(collector.tool + " collector failed: " + str(exc))
-        if source.errors:
-            source.status = "error"
-        store.save_source(run_id, source)
-
-    # Balance / quota / cost snapshots for the same tools.
-    for collector in balance_collectors(tools):
-        source = SourceReport(tool=collector.tool)
-        report.sources[collector.tool + "/balance"] = source
-        try:
-            ctx = CollectContext(roots=[], report=source, source_dirs=source_dirs)
-            batch = []
-            for snapshot in collector.collect(ctx):
-                batch.append(snapshot)
-                if len(batch) >= 2000:
-                    inserted, skipped = store.insert_accounts(batch)
-                    source.inserted += inserted
-                    source.skipped += skipped
-                    batch = []
-            if batch:
-                inserted, skipped = store.insert_accounts(batch)
-                source.inserted += inserted
-                source.skipped += skipped
-        except Exception as exc:
-            source.status = "error"
-            source.error(str(exc))
-        store.save_source(run_id, source)
-
-    duration = _now_ms() - started
-    report.inserted = sum(s.inserted for s in report.sources.values())
-    report.skipped = sum(s.skipped for s in report.sources.values())
-    report.errors = sum(s.errors for s in report.sources.values())
-    report.warnings = sum(s.warnings for s in report.sources.values())
-    store.finish_run(run_id, report.inserted, report.skipped, report.errors,
-                     report.warnings, duration)
-    store.close()
-
-    _print_report(report)
-    return 0 if report.errors == 0 else 1
+    summary = collect_once(str(db_path), tools, source_dirs)
+    if args_verbose:
+        for name, source in summary["sources"].items():
+            for detail in source.get("details", [])[:10]:
+                print("    " + detail)
+    _print_summary(summary)
+    return 0 if summary["errors"] == 0 else 1
 
 
-def _print_report(report):
-    print("collection summary (run " + str(report.run_id) + ")")
+def _print_summary(summary):
+    print("collection summary (run " + str(summary["run_id"]) + ")")
     print("-" * 78)
-    for tool in list(report.tools) + [t + "/balance" for t in report.tools]:
-        source = report.sources.get(tool)
+    for tool in list(summary["tools"]) + [t + "/balance" for t in summary["tools"]]:
+        source = summary["sources"].get(tool)
         if source is None:
             continue
         name = DISPLAY_NAMES.get(tool.split("/")[0], tool) + (
             " 余额/额度" if tool.endswith("/balance") else "")
-        line = (name.ljust(18) + " files " + str(source.scanned_files).rjust(5)
-                + "  records " + str(source.parsed_records).rjust(7)
-                + "  new " + str(source.inserted).rjust(7)
-                + "  dup " + str(source.skipped).rjust(6))
-        if source.errors or source.warnings:
-            line += "  issues " + str(source.errors) + "/" + str(source.warnings)
+        line = (name.ljust(18) + " files " + str(source["scanned_files"]).rjust(5)
+                + "  records " + str(source["parsed_records"]).rjust(7)
+                + "  new " + str(source["inserted"]).rjust(7)
+                + "  dup " + str(source["skipped"]).rjust(6))
+        if source["errors"] or source["warnings"]:
+            line += "  issues " + str(source["errors"]) + "/" + str(source["warnings"])
         print(line)
-        if args_verbose:
-            for detail in source.details[:10]:
-                print("    " + detail)
     print("-" * 78)
-    print("inserted " + str(report.inserted) + "  skipped " + str(report.skipped)
-          + "  errors " + str(report.errors)
-          + "  warnings " + str(report.warnings))
+    print("inserted " + str(summary["inserted"]) + "  skipped " + str(summary["skipped"])
+          + "  errors " + str(summary["errors"])
+          + "  warnings " + str(summary["warnings"]))
 
 
 def cmd_report(args):

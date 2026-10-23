@@ -249,14 +249,38 @@ def qwencode_paths() -> ToolPaths:
         ]
     return _first_existing(candidates, "qwencode", notes)
 
+def pi_paths() -> ToolPaths:
+    """Pi coding agent.
+
+    Layout (all platforms): ``~/.pi/agent/sessions/<encoded-cwd>/`` holding
+    one JSONL file per session, named ``<iso-timestamp>_<session-id>.jsonl``.
+    Only assistant messages carry usage.
+    """
+    notes = ["reads ~/.pi/agent/sessions/**/*.jsonl (assistant usage)"]
+    override = _env_dir("TOKENMON_PI_HOME")
+    if override:
+        return _first_existing([override], "pi", notes)
+    return _first_existing([home() / ".pi" / "agent"], "pi", notes)
+
+
 def workbuddy_paths() -> ToolPaths:
     """WorkBuddy (Tencent desktop AI assistant).
 
-    Layout (macOS): `~/.workbuddy` holding `workbuddy.db`, whose
-    `session_usage` table records context-window usage per session.
+    Two sources live under the home directory:
+
+    ``projects/<encoded-cwd>/<session-id>.jsonl``
+        Provider turns carrying ``providerData.usage``: the per-request token
+        counts that were actually billed.
+    ``workbuddy.db`` -> ``session_usage``
+        Context-window occupancy per session.  Reported as a snapshot, never
+        summed into the token totals.
+
     Windows/Linux fall back to the app-support / XDG locations.
     """
-    notes = ["reads ~/.workbuddy/workbuddy.db (session context usage)"]
+    notes = [
+        "reads projects/**/*.jsonl providerData.usage (billed usage)",
+        "reads workbuddy.db session_usage (context occupancy only)",
+    ]
     override = _env_dir("TOKENMON_WORKBUDDY_HOME")
     if override:
         return _first_existing([override], "workbuddy", notes)
@@ -278,6 +302,7 @@ RESOLVERS = {
     "deepseek-harness": deepseek_harness_paths,
     "qwencode": qwencode_paths,
     "workbuddy": workbuddy_paths,
+    "pi": pi_paths,
 }
 
 #: Canonical tool order used by the CLI, the web UI and the collectors.
@@ -289,6 +314,7 @@ TOOL_ORDER = [
     "deepseek-harness",
     "qwencode",
     "workbuddy",
+    "pi",
 ]
 
 

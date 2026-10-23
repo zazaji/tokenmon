@@ -182,7 +182,11 @@ def make_opencode_home(root):
 
 
 def make_dsh_home(root):
-    """A harness home with one plain (uncompressed) session file."""
+    """A harness home with one plain (uncompressed) session file.
+
+    Two tool calls belong to step 1 and one to step 2, so a collector that
+    repeats the session-wide tool call total on every record cannot pass.
+    """
     root.mkdir(parents=True, exist_ok=True)
     session_dir = root / "sessions" / "--work-gamma--" / "session-abc"
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -192,7 +196,9 @@ def make_dsh_home(root):
          "data": {"provider": "workbuddy", "model": "step-5-preview"}},
         {"type": "user/message", "time": 1780000000100, "data": {}},
         {"type": "tool/call", "time": 1780000000200,
-         "data": {"name": "bash"}},
+         "data": {"turn": 1, "step": 1, "name": "bash"}},
+        {"type": "tool/call", "time": 1780000000250,
+         "data": {"turn": 1, "step": 1, "name": "bash"}},
         {"type": "assistant/message", "time": 1780000000300,
          "data": {"turn": 1, "step": 1,
                   "message": {"role": "assistant",
@@ -215,8 +221,94 @@ def make_dsh_home(root):
                                                  "outputTokens": 200,
                                                  "cacheReadTokens": 3100,
                                                  "totalTokens": 5400}}}]}},
+        {"type": "tool/call", "time": 1780000000450,
+         "data": {"turn": 1, "step": 2, "name": "bash"}},
     ]
     write_jsonl(session_dir / "session.v4.jsonl", rows)
+    return root
+
+
+def make_workbuddy_home(root):
+    """A WorkBuddy home with per-request usage logs and a context database.
+
+    The real ``~/.workbuddy`` layout holds two different kinds of fact:
+
+    ``projects/<encoded-cwd>/<session-id>.jsonl``
+        Every provider turn carries ``providerData.usage`` with the real
+        per-request input / output / cached / reasoning token counts.
+    ``workbuddy.db`` -> ``session_usage``
+        How full the context window of a session is.  That is context
+        occupancy, not billed usage, so it must never be summed into the
+        token totals.
+    """
+    root.mkdir(parents=True, exist_ok=True)
+
+    def turn(session_id, ts, step_seq, req, model, inp, out, cached,
+             reasoning, kind="function_call", cwd="/work/gamma"):
+        return {
+            "id": "%s-%s" % (session_id, step_seq),
+            "timestamp": ts,
+            "type": kind,
+            "sessionId": session_id,
+            "cwd": cwd,
+            "providerData": {
+                "model": model,
+                "requestModelId": model,
+                "stepSeq": step_seq,
+                "conversationRequestId": req,
+                "messageId": "%s-%s" % (req, step_seq),
+                "usage": {
+                    "requests": 1,
+                    "inputTokens": inp,
+                    "outputTokens": out,
+                    "totalTokens": inp + out,
+                    "inputTokensDetails": [{"cached_tokens": cached}],
+                    "outputTokensDetails": [{"reasoning_tokens": reasoning}],
+                },
+            },
+        }
+
+    # Two steps of one request plus a final answer, then a second request.
+    write_jsonl(root / "projects" / "-work-gamma-" / "wb-s1.jsonl", [
+        turn("wb-s1", 1780000000000, 1, "req-a1", "hy3", 1000, 100, 400, 10),
+        turn("wb-s1", 1780000001000, 2, "req-a1", "hy3", 1100, 50, 500, 5),
+        turn("wb-s1", 1780000002000, 3, "req-a1", "hy3", 1200, 70, 600, 0,
+             kind="message"),
+        {"type": "message", "timestamp": 1780000000000, "role": "user",
+         "sessionId": "wb-s1",
+         "content": [{"type": "input_text", "text": "hello"}]},
+    ])
+    write_jsonl(root / "projects" / "-work-delta-" / "wb-s2.jsonl", [
+        turn("wb-s2", 1780000100000, 1, "req-b1", "deepseek-v4.1-flash",
+             300, 30, 100, 0, cwd="/work/delta"),
+    ])
+    # Noise: a session log without any usage must be ignored entirely.
+    write_jsonl(root / "projects" / "-work-delta-" / "wb-s3.jsonl",
+                [{"type": "session-meta", "timestamp": 1780000200000,
+                  "sessionId": "wb-s3", "meta": {}}])
+
+    db = root / "workbuddy.db"
+    conn = sqlite3.connect(str(db))
+    conn.executescript("""
+        CREATE TABLE sessions (
+            id TEXT PRIMARY KEY, cwd TEXT NOT NULL, model TEXT,
+            created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+        CREATE TABLE session_usage (
+            session_id TEXT PRIMARY KEY, used INTEGER NOT NULL,
+            size INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+            credit_json TEXT);
+    """)
+    conn.execute("INSERT INTO sessions VALUES (?,?,?,?,?)",
+                 ("wb-s1", "/work/gamma", "hy3", 1780000000000, 1780000002000))
+    conn.execute("INSERT INTO sessions VALUES (?,?,?,?,?)",
+                 ("wb-s2", "/work/delta", "deepseek-v4.1-flash",
+                  1780000100000, 1780000100000))
+    conn.execute("INSERT INTO session_usage VALUES (?,?,?,?,?)",
+                 ("wb-s1", 5000, 192000, 1780000002000, None))
+    conn.execute("INSERT INTO session_usage VALUES (?,?,?,?,?)",
+                 ("wb-s2", 800, 192000, 1780000100000, None))
+    conn.commit()
+    conn.close()
     return root
 
 
@@ -275,6 +367,68 @@ def dsh_home(tmp_path):
     return make_dsh_home(tmp_path / "dsh")
 
 
+@pytest.fixture()
+def workbuddy_home(tmp_path):
+    return make_workbuddy_home(tmp_path / "workbuddy")
+
+
+def make_pi_home(root):
+    """A Pi agent home with session logs carrying usage."""
+    root.mkdir(parents=True, exist_ok=True)
+    session = root / "sessions" / "--home-zazaji-projects-AINEWS--"
+    session.mkdir(parents=True, exist_ok=True)
+    rows = [
+        {"type": "session", "version": 3,
+         "id": "01a0c3d5-68fc-72e0-b577-8a316362ba68",
+         "timestamp": "2026-10-20T09:00:00.000Z",
+         "cwd": "/home/zazaji/projects/AINEWS"},
+        {"type": "model_change", "id": "235feb87", "parentId": None,
+         "timestamp": "2026-10-20T09:00:00.100Z", "provider": "apigate",
+         "modelId": "c_glm"},
+        {"type": "message", "id": "8a2c7bae", "parentId": "235feb87",
+         "timestamp": "2026-10-20T09:00:00.200Z",
+         "message": {"role": "user",
+                     "content": [{"type": "text", "text": "help"}],
+                     "timestamp": 1790000000000}},
+        {"type": "message", "id": "338da9fd", "parentId": "8a2c7bae",
+         "timestamp": "2026-10-20T09:00:05.774Z",
+         "message": {"role": "assistant",
+                     "content": [{"type": "toolCall",
+                                  "id": "chatcmpl-tool-b11", "name": "bash",
+                                  "arguments": {"command": "ls"}}],
+                     "api": "anthropic-messages", "provider": "apigate",
+                     "model": "c_glm",
+                     "usage": {"input": 900, "output": 0, "cacheRead": 0,
+                               "cacheWrite": 0, "totalTokens": 900},
+                     "stopReason": "toolUse",
+                     "timestamp": 1790000000000}},
+        {"type": "message", "id": "c0c1e50b", "parentId": "338da9fd",
+         "timestamp": "2026-10-20T09:00:12.271Z",
+         "message": {"role": "assistant",
+                     "content": [{"type": "text", "text": "done"}],
+                     "api": "anthropic-messages", "provider": "apigate",
+                     "model": "c_glm",
+                     "usage": {"input": 1188, "output": 270, "cacheRead": 0,
+                               "cacheWrite": 0, "totalTokens": 1458},
+                     "stopReason": "stop",
+                     "timestamp": 1790000000000}},
+        # A tool result carries no usage and must be ignored.
+        {"type": "message", "id": "f5a5beeb", "parentId": "338da9fd",
+         "timestamp": "2026-10-20T09:00:05.828Z",
+         "message": {"role": "toolResult", "toolCallId": "chatcmpl-tool-b11",
+                     "content": [{"type": "text", "text": "listing"}],
+                     "isError": False, "timestamp": 1790000000000}},
+    ]
+    write_jsonl(session / "2026-10-20T09-00-00-000Z_01a0c3d5-68fc-72e0-b577-8a316362ba68.jsonl",
+                rows)
+    return root
+
+
+@pytest.fixture()
+def pi_home(tmp_path):
+    return make_pi_home(tmp_path / "pi")
+
+
 def make_qwen_home(root):
     """A QwenCode home in the real ~/.qwen layout."""
     root.mkdir(parents=True, exist_ok=True)
@@ -315,7 +469,7 @@ def generic_home(tmp_path):
 
 @pytest.fixture()
 def all_homes(tmp_path, codex_home, claude_home, zcode_home, opencode_home,
-              dsh_home, qwen_home):
+              dsh_home, qwen_home, workbuddy_home, pi_home):
     return {
         "codex": codex_home,
         "claudecode": claude_home,
@@ -323,4 +477,6 @@ def all_homes(tmp_path, codex_home, claude_home, zcode_home, opencode_home,
         "opencode": opencode_home,
         "deepseek-harness": dsh_home,
         "qwencode": qwen_home,
+        "workbuddy": workbuddy_home,
+        "pi": pi_home,
     }

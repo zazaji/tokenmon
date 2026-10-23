@@ -168,7 +168,8 @@ def test_dsh_reads_plain_jsonl(dsh_home):
     assert {r.model for r in records} == {"step-5-preview"}
     assert {r.provider for r in records} == {"workbuddy"}
     assert {r.project for r in records} == {"gamma"}
-    assert sum(r.tool_calls for r in records) == 2
+    # Tool calls belong to the step that made them: 2 in step 1, 1 in step 2.
+    assert [r.tool_calls for r in records] == [2, 1]
 
 
 def test_dsh_counts_interactions(dsh_home):
@@ -186,6 +187,89 @@ def test_dsh_reads_zstd(dsh_home):
     records, _ = collect("deepseek-harness", [dsh_home])
     assert len(records) == 2
     assert sum(r.total_tokens for r in records) == 10800
+
+
+# ---------------------------------------------------------------- workbuddy
+
+def test_workbuddy_reads_per_request_usage(workbuddy_home):
+    records, report = collect("workbuddy", [workbuddy_home])
+    t = totals(records)
+    # 1000+1100+1200 (session 1) + 300 (session 2)
+    assert t["input"] == 3600
+    assert t["output"] == 250
+    assert t["cache_read"] == 1600
+    assert t["reasoning"] == 15
+    billed = [r for r in records if r.status != "context-snapshot"]
+    assert len(billed) == 4
+    assert {r.model for r in records} == {"hy3", "deepseek-v4.1-flash"}
+    assert {r.project for r in billed} == {"gamma", "delta"}
+    assert {r.provider for r in billed} == {"workbuddy"}
+    assert report.errors == 0
+
+
+def test_workbuddy_context_occupancy_is_not_billed_usage(workbuddy_home):
+    """Context occupancy must be reported, but never counted as tokens."""
+    records, _ = collect("workbuddy", [workbuddy_home])
+    billed = [r for r in records if r.status != "context-snapshot"]
+    assert sum(r.total_tokens for r in billed) == 3850
+    snapshots = [r for r in records if r.status == "context-snapshot"]
+    assert len(snapshots) == 2
+    # The occupancy figures stay available in metadata for the UI.
+    assert {r.metadata["context_used"] for r in snapshots} == {5000, 800}
+    # ... but they contribute nothing to the token columns.
+    assert all(r.input_tokens == 0 for r in snapshots)
+    assert all(r.output_tokens == 0 for r in snapshots)
+    assert all(r.total_tokens == 0 for r in snapshots)
+    assert all(r.metadata["metric"] == "context_occupancy" for r in snapshots)
+
+
+def test_workbuddy_usage_does_not_double_count(workbuddy_home):
+    """Re-collecting the same home must not create new rows."""
+    from tokenmon_pkg.store import Store
+
+    db = workbuddy_home / "tokenmon.db"
+    keys = set()
+    for _ in range(2):
+        store = Store(str(db))
+        report = SourceReport(tool="workbuddy")
+        ctx = CollectContext(roots=[], report=report,
+                             source_dirs=[workbuddy_home])
+        records = list(REGISTRY["workbuddy"].collect(ctx))
+        store.insert_many(records)
+        keys |= {r.record_key for r in records}
+        store.close()
+    assert len(keys) == 6
+    assert sum(1 for k in keys if "ctx" in k) == 2
+
+
+# --------------------------------------------------------------------- pi
+
+def test_pi_reads_assistant_usage(pi_home):
+    records, report = collect("pi", [pi_home])
+    t = totals(records)
+    assert t["input"] == 900 + 1188
+    assert t["output"] == 270
+    assert t["total"] == 900 + 1458
+    assert len(records) == 2
+    # c_glm is canonicalised to GLM-5.3-Flash so one model stays one row.
+    assert {r.model for r in records} == {"GLM-5.3-Flash"}
+    assert {r.provider for r in records} == {"apigate"}
+    assert {r.project for r in records} == {"AINEWS"}
+    assert {r.session_id for r in records} == {
+        "01a0c3d5-68fc-72e0-b577-8a316362ba68"}
+    assert report.errors == 0
+
+
+def test_pi_counts_tool_calls_and_interactions(pi_home):
+    records, _ = collect("pi", [pi_home])
+    assert [r.tool_calls for r in records] == [1, 0]
+    assert sum(r.is_interaction for r in records) == 2
+
+
+def test_pi_ignores_non_assistant_messages(pi_home):
+    """user / system / toolResult rows carry no usage."""
+    records, _ = collect("pi", [pi_home])
+    assert len(records) == 2
 
 
 # ------------------------------------------------------- generic collectors
@@ -226,7 +310,7 @@ def test_generic_missing_directory_is_silent(tmp_path):
 def test_registry_has_all_tools():
     assert set(REGISTRY) == {
         "codex", "claudecode", "zcode", "opencode", "deepseek-harness",
-        "qwencode", "workbuddy"}
+        "qwencode", "workbuddy", "pi"}
 
 
 def test_collect_all_tools_without_error(all_homes):

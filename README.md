@@ -14,7 +14,8 @@
 | `opencode` | opencode | `~/.local/share/opencode/opencode.db`（Windows: `%APPDATA%\opencode`） |
 | `deepseek-harness` | DeepSeek Harness | `~/.dsh/sessions/*/session-*/session.v4.jsonl[.zstd]` |
 | `qwencode` | QwenCode CLI | `~/.qwen/usage/token-usage-*.jsonl` + `usage_record.jsonl` |
-| `workbuddy` | WorkBuddy | `~/.workbuddy/workbuddy.db` 的 `session_usage`（仅上下文占用量） |
+| `workbuddy` | WorkBuddy | `~/.workbuddy/projects/**/*.jsonl` 的 `providerData.usage`（按请求计费）+ `workbuddy.db` 的 `session_usage`（仅上下文占用量，不计入 token） |
+| `pi` | Pi coding agent | `~/.pi/agent/sessions/**/*.jsonl` 的 `message.usage`（仅 assistant 消息） |
 
 ## 快速开始
 

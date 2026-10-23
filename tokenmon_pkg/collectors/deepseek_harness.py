@@ -141,13 +141,20 @@ class DeepSeekHarnessCollector(BaseCollector):
         return records
 
     def _context(self, records):
-        """Session level context discovered by a single pass."""
+        """Session level context discovered by a single pass.
+
+        ``tool_calls_by_step`` counts the tool calls of each (turn, step) so a
+        usage record can report the calls of its own step.  Repeating a
+        session wide total on every record would multiply the real number of
+        tool calls by the number of model responses.
+        """
         session_id = ""
         cwd = ""
         provider = ""
         model = "unknown"
         interactions = 0
         tool_calls = 0
+        tool_calls_by_step: dict = {}
         for obj in records:
             rtype = obj.get("type")
             data = obj.get("data")
@@ -163,13 +170,17 @@ class DeepSeekHarnessCollector(BaseCollector):
                 interactions += 1
             elif rtype == "tool/call":
                 tool_calls += 1
-        return session_id, cwd, provider, model, interactions, tool_calls
+                slot = (data.get("turn"), data.get("step"))
+                tool_calls_by_step[slot] = tool_calls_by_step.get(slot, 0) + 1
+        return (session_id, cwd, provider, model, interactions, tool_calls,
+                tool_calls_by_step)
 
     def _parse_file(self, path, ctx):
         records = self._load(path)
         if not records:
             return
-        session_id, cwd, provider, model, interactions, tool_calls = self._context(records)
+        (session_id, cwd, provider, model, interactions, tool_calls,
+         tool_calls_by_step) = self._context(records)
         for obj in records:
             if obj.get("type") != "assistant/message":
                 continue
@@ -191,11 +202,14 @@ class DeepSeekHarnessCollector(BaseCollector):
                             str(numbers.get("total_tokens"))])
             ctx.report.parsed_records += 1
             yield self._record(path, key, ts, model, provider, session_id, cwd,
-                               numbers, interactions, tool_calls, turn, step)
+                               numbers, interactions,
+                               tool_calls_by_step.get((turn, step), 0),
+                               turn, step, interactions, tool_calls)
 
     def _parse_attempts(self, path, ctx):
         records = self._load(path)
-        session_id, cwd, provider, model, interactions, tool_calls = self._context(records)
+        (session_id, cwd, provider, model, interactions, tool_calls,
+         tool_calls_by_step) = self._context(records)
         seen = set()
         for obj in records:
             if obj.get("type") != "assistant/attempt":
@@ -217,10 +231,13 @@ class DeepSeekHarnessCollector(BaseCollector):
                             str(numbers.get("total_tokens"))])
             ctx.report.parsed_records += 1
             yield self._record(path, key, ts, model, provider, session_id, cwd,
-                               numbers, interactions, tool_calls, turn, step)
+                               numbers, interactions,
+                               tool_calls_by_step.get((turn, step), 0),
+                               turn, step, interactions, tool_calls)
 
     def _record(self, path, key, ts, model, provider, session_id, cwd, numbers,
-                interactions, tool_calls, turn, step):
+                interactions, step_tool_calls, turn, step,
+                session_interactions, session_tool_calls):
         return UsageRecord(
             tool=self.tool,
             record_key=key,
@@ -236,10 +253,10 @@ class DeepSeekHarnessCollector(BaseCollector):
             cache_write_tokens=numbers.get("cache_write_tokens", 0),
             total_tokens=numbers.get("total_tokens", 0),
             llm_calls=1,
-            tool_calls=tool_calls,
+            tool_calls=step_tool_calls,
             is_interaction=1 if interactions else 0,
             source_path=str(path),
             metadata={"turn": turn, "step": step,
-                      "session_interactions": interactions,
-                      "session_tool_calls": tool_calls},
+                      "session_interactions": session_interactions,
+                      "session_tool_calls": session_tool_calls},
         )

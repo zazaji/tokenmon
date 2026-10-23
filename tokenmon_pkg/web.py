@@ -205,7 +205,7 @@ def create_app(db_path: str | None = None) -> Flask:
         reasons = {
             "cursor": "未安装：未找到 Cursor 数据目录",
             "qwencode": "未安装：未找到 QwenCode 数据目录",
-            "workbuddy": "本地仅有上下文占用量，无请求级 token 分配",
+            "workbuddy": "仅有上下文占用快照：会话日志里没有 providerData.usage 记录",
         }
         return jsonify({
             "tools": [
